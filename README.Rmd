@@ -199,10 +199,91 @@ graph LR;
 
 In this data all divorce, separate, and widowed were married.
 
-## Fitting model removing all those sexually debuted after married
+```{r, include=FALSE}
+library(tidyverse)
+library(msm)
+```
+
+The number of transition events showed all those sexually debuted married, 13%
+got separated, and 3.6% becamed widowed. 
+
+```{r, echo=FALSE, results="asis"}
+msdta <- readRDS("data/mw2015.rds")
+statetable.msm(state = state, subject = pid, data = msdta) %>% knitr::kable()
+```
+
+## Fitting model 
 
 Those who debuted sexually within a year of marriage age is recoded to the same
 age at married, the rest is discarded for this analysis. 
 
+- [ ] how to treat sexually debuted after married
+
+### Transition intensity matrix template initiation
+
+```{r, echo=FALSE}
+Q <- rbind(
+    c(0.0, 0.1, 0.0, 0.0, 0.0),
+    c(0.0, 0.0, 0.1, 0.0, 0.0),
+    c(0.0, 0.0, 0.0, 0.1, 0.1),
+    c(0.0, 0.0, 0.0, 0.0, 0.0),
+    c(0.0, 0.0, 0.0, 0.0, 0.0)
+)
+
+msdta <- msdta %>% filter(!pid %in% c(13889, 14566))
+
+# get crude Q
+Q.crude <- crudeinits.msm(state_numeric ~ time, pid, data = msdta, qmatrix = Q)
+Q.crude
+```
+
+### Test model without unterval censored
+
+```{r, echo = FALSE}
+mod.msm <- msm(state_numeric ~ time,
+    subject = pid, data = msdta, qmatrix = Q,
+    exacttimes = TRUE,
+    obstype = 2
+)
+
+mod.msm
+```
+
+### Transition intensity matrices
+
+```{r, echo=FALSE}
+qmatrix.msm(mod.msm)
+```
+
+### Transition probability matrices
+
+```{r, echo=FALSE}
+pmatrix.msm(mod.msm, t = 1) %>% round(3)
+```
+
+- Why getting transition from virgin to separated and widowed here while the
+model estimates did not have it? 
+
+
+### Test model without censored
+
+```{r, echo = FALSE}
+testthat::expect_error(
+    mod.msm <- msm(state_numeric ~ time, subject = pid, data = msdta, qmatrix = Q, obstype = 1)
+)
+```
+
+# Notes:
+
+- Right censored
+- Interval censored
+
+- Rate by ages
+- by period
+
+Married multiple times
+- remarried quite high >> 
+- % married more than one
+- do interval censor survival analysis
 
 # References
