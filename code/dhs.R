@@ -14,6 +14,7 @@
 #' citecolor: red
 #' ---
 #'
+# -----------------------------------------------------------------------------
 
 #+ packages and config, include=FALSE
 library(rdhs)
@@ -193,72 +194,6 @@ dta %<>%
     )
 dta
 
-library("flexsurv")
-n_trans <- max(tmat, na.rm = TRUE)
-#' plot raw data
-library(ggpubr, help, pos = 2, lib.loc = NULL)
-
-four_state_raw <- ggarrange(
-    dta %>% ggplot() +
-        geom_density(aes(t_debut)) +
-        labs(title = "t_debut", x = "Time"),
-    dta %>%
-        mutate(diff = if_else(censored, t_union, t_union - t_debut)) %>%
-        filter(diff >= 0) %>% 
-        ggplot() +
-        geom_density(aes(diff, fill = factor(censored)), alpha=.7) +
-        labs(title = "Debut before Married", fill = "Censored", x = "Time"),
-    dta %>%
-        mutate(diff = if_else(censored, t_union, t_union - t_debut)) %>%
-        filter(diff < 0) %>% 
-        ggplot() +
-        geom_density(aes(diff, fill = factor(censored)), alpha=.7) +
-        labs(title = "Debut after Married", fill = "Censored", x = "Time"),
-    
-    dta %>%
-        mutate(
-            diff = if_else(marriage_age != 0, t_separate - t_union, t_separate),
-            know_aam = marriage_age != 0
-        ) %>%
-        ggplot() +
-            geom_density(aes(diff, fill = factor(know_aam)), alpha = .7) +
-            labs(title = "Separated", fill = "Known age at married?", x = "Time"),
-    
-    dta %>%
-        mutate(
-            diff = if_else(marriage_age != 0, t_widowed - t_union, t_widowed),
-            know_aam = marriage_age != 0
-        ) %>%
-        ggplot() +
-            geom_density(aes(diff, fill = factor(know_aam)), alpha = .7) +
-            labs(title = "Widowed", fill = "Known age at married?", x = "Time"),
-   
-    ncol = 3, nrow = 2
-)
-ggsave("img/four_state_raw.png")
-
-#' Prepare msm format
-msdta <-
-dta %>% 
-    select(age, marital_status, marriage_age, starts_with("t_")) %>%
-    filter(t_union >= t_debut) %>%
-    mutate(
-        pid = 1:n(),
-        t_debut = if_else(t_debut == t_virgin, t_virgin + 1 / 12, t_debut),
-        t_union = if_else(t_union <= t_debut, t_debut + 1 / 12, t_union),
-        t_separate = if_else(t_separate <= t_union, t_union + 1 / 12, t_separate),
-        t_widowed = if_else(t_widowed <= t_union, t_union + 1 / 12, t_widowed),
-    ) %>%
-    pivot_longer(starts_with("t_"), names_to = "state", values_to = "time", names_prefix = "t_") %>%
-    mutate(
-        state = factor(state, levels = char(virgin, debut, union, separate, widowed)),
-        state_numeric = as.numeric(state)
-    ) %>% drop_na()
-    
-msdta
-
-saveRDS(msdta, "data/mw2015.rds")
-
 #' 
 #' ## Dissolution - time since married
 #' 
@@ -362,5 +297,4 @@ dta %>%
 #
 #' # Appendix
 #' 
-
-saveRDS(msdta, "data/mw2015.rds")
+# -----------------------------------------------------------------------------
