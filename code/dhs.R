@@ -348,5 +348,19 @@ dta %>%
 #' The probability of widowhood was estimated as
 #'
 #' $$p_{\text{widowhood}} = p_{\text{union dissolution}} - p_{\text{divorce}}$$
+#' 
+#' # References {-}
+#' 
+#' <div id="refs"></div>
+#' 
+#' \setcounter{section}{0}
+#' \renewcommand{\thesection}{\Alph{section}}
+#' \setcounter{table}{0}
+#' \renewcommand{\thetable}{A\arabic{table}}
+#' \setcounter{figure}{0}
+#' \renewcommand{\thefigure}{A\arabic{figure}}
+#
+#' # Appendix
+#' 
 
 saveRDS(msdta, "data/mw2015.rds")
