@@ -258,3 +258,45 @@ dta %>%
 msdta
 
 saveRDS(msdta, "data/mw2015.rds")
+
+#' 
+#' ## Dissolution - time since married
+#' 
+dta %<>%
+    mutate(
+        time_since_married_c = (doi - cmc_uninon) / 12,
+        time_since_married_d = findInterval2(time_since_married_c, seq(0, 20, 5))
+    )
+#' ### Once union - competing risk model with right censored data
+#'
+#' **Among those with only once union**, a majority of the population have
+#' remained in the same marital status for more than 5 years. ~~Nearly 95% of
+#' the widowed respondents has not remarried for 5 to 20+ year after the first
+#' union~~. But since we do not know the time of the event, e.g., time of
+#' partner's death, the above interpretation is only correct for the married and
+#' partnered group. The others groups, widowed, divorced, and separated, the
+#' numbers would more likely reflect the varying in the time of the events.
+#'
+#' Limited to this set of data, a survival model using the time since married
+#' would treat separated, divorce, and widowed as competing events while those
+#' in married or partnered states will be right-censored.
+
+#+ fig.cap="Time since married"
+dta %>%
+    group_by(marital_status, time_since_married_d, n_union) %>%
+    count() %>%
+    drop_na() %>%
+    ggplot() +
+    geom_col(aes(marital_status, n, fill = time_since_married_d), position = position_fill()) +
+    facet_wrap(~n_union) +
+    theme(axis.text.x = element_text(angle = 30))
+
+#' All those in union have records of time of union
+#+ union_by_marriage_age, results = "asis"
+dta %>%
+    filter(n_union == "once") %>%
+    tabyl(marriage_age_d, marital_status) %>%
+    kable(caption = "Time since union by marital statue")
+
+
+
