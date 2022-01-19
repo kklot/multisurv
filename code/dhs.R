@@ -26,6 +26,7 @@ tabyl <- function(dat, ...) janitor::tabyl(dat, ..., show_missing_level = FALSE)
 devtools::load_all("~/Code/R/ktools/")
 library(knitr)
 opts_chunk$set(echo = FALSE, cache = FALSE, out.extra = "")
+set.seed(1)
 
 # Pull with `rdhs`
 # set_rdhs_config(email = "ath19@ic.ac.uk", project = "Statistics and Machine Learning for HIV")
@@ -33,8 +34,10 @@ opts_chunk$set(echo = FALSE, cache = FALSE, out.extra = "")
 #     filter(SurveyYear == 2015)  %>%
 #     mutate(sex = if_else(FileType == "Individual Recode", "female", "male"))
 # datasets
+datasets <- readRDS("~/dhs_datasets.rds")
 # downloads <- get_datasets(datasets$FileName)
 # names(downloads)
+downloads <- readRDS("~/dhs_downloads.rds")
 
 x <- 1 # adapt from multiple datasets
 o <- readRDS(downloads[[x]]) %>%
@@ -60,14 +63,11 @@ dta <- o %>%
         age = svy - yob, sex = datasets$sex[x]
     )
 
-#' cleaning
-#' # Data cleaning
-#'
-#' Remove those
+#' Data cleaning
 #'
 #' - afs or marriage age greater than age
 #' - married but no afs
-
+#' 
 dta %<>% filter(!(afs > age | marriage_age > age))
 dta %<>% filter(!(marital_status != 0 & afs == 0))
 # dta %<>% filter(afs <= marriage_age)
@@ -253,6 +253,38 @@ dta %>%
 #' there are still cases where both states widowed and divorce has been passed
 #' through. So we could only limit the analyses at best to hazard of an event
 #' *after the first union*.
+#' 
+#' # Age at marriage (AAM) model
+#'
+#' Five possible scenarios outlined in \cref{fig:aamModel} where time *at risk of
+#' getting married* is highlighted.
+#'
+#+ aamModel, fig.cap = "AAM risk set model", fig.height=3
+bind_rows(
+    tibble(start = char(birth, afs, aam), end = char(afs, aam, aai), a = 0:2, z = 1:3, set = 1, risk = c(0, 1, 0)),
+    tibble(start = char(birth, afs), end = char(afs, aai), a = c(0, 1), z = c(1, 3), set = 2, risk = c(0, 1)),
+    tibble(start = char(birth, aam, afs), end = char(aam, afs, aai), a = c(0, .7, 1), z = c(.7, 1, 3), set = 3, risk = c(1, 0, 0)),
+    tibble(start = char(birth, aam), end = char(aam, aai), a = c(0, .7), z = c(.7, 3), set = 4, risk = c(1, 0)),
+    #' no AFS
+    tibble(start = char(birth), end = char(aai), a = c(0), z = c(3), set = 5, risk = c(1))
+) %>%
+    mutate(risk = factor(risk, labels = char(No, Yes)), 
+    across(where(is.character), str_to_upper)) %>%s
+        geom_segment(aes(a, 1, xend = z, yend = 1, color=risk), 
+        arrow = arrow(type = "closed")) +
+        geom_text(aes(a, 1.1, label = start)) +
+            geom_text(aes(z, 1.1, label = end)) +
+            theme_void() +
+            scale_color_manual(values = c("grey", "#FD7C02")) +
+            coord_cartesian(ylim = c(.5, 1.5)) +
+            facet_grid(vars(set)) +
+            guides(color = "none")
+
+#' The first case is the typical states transition with observed marriage event;
+#' the second case is right censored at the time of interview. The third and
+#' fourth case are special in that the time "at risk of getting marriage" are
+#' counted from birth. To reflect the difference between this exposure time and
+#' the two standard cases (1 and 2), respondent's age at the exposure time are
 #' 
 #' # Methods
 #'
