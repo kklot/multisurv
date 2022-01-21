@@ -28,6 +28,12 @@ library(knitr)
 opts_chunk$set(echo = FALSE, cache = FALSE, out.extra = "")
 set.seed(1)
 
+library(INLA)
+remotes::install_github("kklot/ktools")
+library(ktools)
+remotes::install_github("kklot/inlar")
+library(inlar)
+
 # Pull with `rdhs`
 # set_rdhs_config(email = "ath19@ic.ac.uk", project = "Statistics and Machine Learning for HIV")
 # datasets <- dhs_datasets("MW", fileFormat = "flat", fileType = c("IR")) %>%
