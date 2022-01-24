@@ -284,7 +284,8 @@ bind_rows(
 #' the second case is right censored at the time of interview. The third and
 #' fourth case are special in that the time "at risk of getting marriage" are
 #' counted from birth. To reflect the difference between this exposure time and
-#' the two standard cases (1 and 2), respondent's age at the exposure time are
+#' the two standard cases (1 and 2), respondent's age at the exposure time are 
+#' taken into account.
 #' 
 #' # Methods
 #'
