@@ -35,6 +35,120 @@ library(ktools)
 remotes::install_github("kklot/inlar")
 library(inlar)
 
+#' # Review of mixture survival model
+#'
+#' The most well-known survival mixture model is the 'cure' model
+#' (@farewellMixtureModelsSurvival1986,@berksonSurvivalCurveCancer1952), where
+#' a fraction of the sample (censored sample in practice) is assumed to never
+#' experience the event (thus a point mass at $T = \infty$).
+#'
+#' Given the incidence rate $\mu_i$, Weibull's shape parameters $\nu$ and a cure
+#' fraction $\rho \in (0, 1)$, the event times $T_i$ is modelled as
+#'
+#' $$\begin{cases} T_i \sim \text{Weibull}(\mu_i, \nu) \qquad \text{with
+#'  probability} 1-\rho\\
+#'  T_i = \infty \qquad \text{with probability} \rho \end{cases}$$
+#'
+#' The model can be fitted with `smcure` package using EM algorithm. The same
+#' model can be fitted with INLA using `weibullcure` family. These versions do
+#' not allow to model covarirates on the probability of being cure.
+#'
+#' With INLA, the rate can be modelled adding covariate and spatial correllation
+#' as @jiangGeostatisticalSurvivalModels2014
+#'
+#' $$\mu_i = \exp(\alpha + \beta X_i + W(s_i) + U(s_i))$$
+#'
+#' where $W$ the factors at individual $i$'s location of residence $s_i$ and
+#' $U(s_i)$ a smooth spatial surface centred at zero reflecting possible
+#' additional factors that are not measured and spatial correlation between
+#' subjects.
+#'
+#' The likelihood in the cure rate model with measurements $Y_i = (L, R, T)$
+#' (left-truncated, right-censored, event time) and event indicator $Z_i$ is
+#' defined as
+#'
+#' $$P(Y|\cdot) = \prod_{i, Z_i = 1} P(T = T_i|T>L_i,\mu_i) \prod_{i, Z_i = 0}
+#' P(T > R_i|T>L_i,\mu_i)
+#' $$
+#'
+#' with
+#'
+#' $$P(T = T|T>L,\mu) = \frac{(1-\rho)f(.)}{\rho + (1 - \rho)
+#' \int_{L}^{\infty} f(.)du }$$
+#'
+#' and
+#'
+#' $$P(T > R|T>L,\mu) = \frac{\rho + (1 - \rho)
+#' \int_{R}^{\infty} f(.)du }{\rho + (1 - \rho) \int_{L}^{\infty} f(.)du }$$
+#'
+#' which have closed-form solutions.
+#'
+#' The AAM model is the opposite and simpler than the cure model. It has exceed
+#' number of 'deaths' at time zero and all those were observed in the data. The
+#' censored observations did not experience marriage at time zero. So instead to
+#' having a cure rate, we have a zero-inflated rate.
+#'
+#' But since the probability density will generally support zeros as well, it
+#' will need to be modified to truncate zero value (?) if keeping the same
+#' approach as cure rate model. @louzadaZeroinflatedNonDefault2018 did
+#' this to model loan (straight to default group - loan time is zero), in
+#' addition to "cure". In particular,
+#'
+#' \begin{equation}
+#' S(t) = p_1 + (1 - p_0 - p_1) S_0(t) \\
+#' F(t) = p_0 + (1 - p_0 - p_1) F_0(t) \\
+#' F(0) = p_0, \qquad \lim_{t\rightarrow \infty} F(t) = 1-p_1
+#' \end{equation}
+#'
+#' $$f(t) = \begin{cases}
+#' p_0, \qquad t=0\\
+#' (1 - p_0 - p_1) f_0(t), \qquad t > 0
+#' \end{cases}
+#' $$
+#'
+#' where $p_0$ the proportion of zero-inflated times, $p_1$ the proportion of
+#' cure rate. The censored observations in this model have likelihood
+#' contributions
+#'
+#' $$p_1 + (1 - p_0 - p_1) S_0(t)$$
+#'
+#' Covariates effect on the proportions was modelled with a multinomial
+#' logistic regression. There was no mention of truncated distribution in the
+#' paper.
+#'
+#' In AAM case, the cure part can be removed and the model becomes similar to
+#' cure rate model with exception that *the distribution needs to be truncated*,
+#' i.e. $T | T > 0 \sim \text{Weibull}()$ (do we?),
+#' @defreitascostaZeroinflatedcensoredWeibullGamma2021 did exactly this but used
+#' the normal Weibull distribution in their likelihood formula.
+#' 
+#' 
+#'  
+#' $$\begin{aligned}
+#' \begin{aligned}
+#' \log
+#' \{L( \pmb {\theta };D_\text {obs})\} &= 
+#' \sum_{\begin{array}{c} i:t_i = 0 \end{array}}\log (p_{0i}) + 
+#' \sum_{\begin{array}{c} i:t_i > 0 \end{array}}\delta_i
+#' \Bigg [
+#' \log \bigg (
+#' \frac{\alpha _{\mathrm{w}}}{\lambda _{\mathrm{w}}}
+#' \bigg ) + (\alpha _{\mathrm{w}}-1)
+#' \log \bigg (
+#' \frac{t_i}{\lambda _{\mathrm{w}}}
+#' \bigg )\Bigg ] \\& 
+#' \quad + 
+#' \sum_{\begin{array}{c} i:t_i>0 \end{array}}
+#' \log (1-p_{0i}) - 
+#' \sum_{\begin{array}{c} i:t_i>0 \end{array}}
+#' \left(\frac{t_i}{\lambda _{\mathrm{w}}}\right)^{\alpha _{\mathrm{w}}}.
+#' \end{aligned} 
+#' \end{aligned}$$
+#' 
+#' > In summary, in the case of observed AFS and AFS is equal or greater than
+#' > AAM, this approach can be used. 
+#' 
+#' 
 # Pull with `rdhs`
 # set_rdhs_config(email = "ath19@ic.ac.uk", project = "Statistics and Machine Learning for HIV")
 # datasets <- dhs_datasets("MW", fileFormat = "flat", fileType = c("IR")) %>%
