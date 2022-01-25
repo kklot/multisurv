@@ -184,6 +184,8 @@ dta <- o %>%
         age = svy - yob, sex = datasets$sex[x]
     )
 
+#' # Descriptive statistics
+#' 
 #' Data cleaning
 #'
 #' - afs or marriage age greater than age
@@ -199,8 +201,6 @@ dta <- dta |>
         separated = "no longer living together/separated",
         union = "living with partner"
     ))
-
-#' # Descriptive statistics
 #'
 #' ## Key variables
 #'
@@ -353,9 +353,6 @@ dta %>%
     filter(n_union == "once") %>%
     tabyl(marriage_age_d, marital_status) %>%
     kable(caption = "Time since union by marital statue")
-
-
-
 
 #' 
 #' ## More than once union - left-censoring of both event and time
