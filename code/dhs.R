@@ -9,6 +9,7 @@
 #'     include:
 #'       in_header: "~/templates/floatHforRmarkdown.tex"
 #' documentclass: article
+#' link-citations: yes
 #' linkcolor: blue
 #' urlcolor: blue
 #' citecolor: red
