@@ -383,27 +383,107 @@ bind_rows(
     tibble(start = char(birth, afs), end = char(afs, aai), a = c(0, 1), z = c(1, 3), risk = c(0, 1)),
     tibble(start = char(birth, aam, afs), end = char(aam, afs, aai), a = c(0, .7, 1), z = c(.7, 1, 3), risk = c(1, 0, 0)),
     tibble(start = char(birth, aam), end = char(aam, aai), a = c(0, .7), z = c(.7, 3), risk = c(1, 0)),
-    #' no AFS
     tibble(start = char(birth), end = char(aai), a = c(0), z = c(3), risk = c(1)),
     .id = 'set'
 ) %>%
     mutate(risk = factor(risk, labels = char(No, Yes)), 
     across(where(is.character), str_to_upper)) %>%
     ggplot() +
-        geom_segment(aes(a, 1, xend = z, yend = 1, color=risk), arrow = arrow(type = "closed")) +
+        geom_segment(aes(a, 1, xend = z, yend = 1, color = risk), arrow = arrow(type = "closed")) +
         geom_text(aes(a, 1.1, label = start)) +
         geom_text(aes(z, 1.1, label = end)) +
         theme_void() +
         scale_color_manual(values = c("grey", "#FD7C02")) +
         coord_cartesian(ylim = c(.5, 1.5)) +
         facet_grid(vars(set)) +
-        guides(color = 'none')
+        guides(color = "none")
+
 #' The first case is the typical states transition with observed marriage event;
 #' the second case is right censored at the time of interview. The third and
 #' fourth case are special in that the time "at risk of getting marriage" are
-#' counted from birth. To reflect the difference between this exposure time and
-#' the two standard cases (1 and 2), respondent's age at the exposure time are 
-#' taken into account.
+#' counted from birth. The difference between this exposure time and the two
+#' standard cases (1 and 2) lies in the AFS and respondent's age at the time.
+#' There are also many cases in scenario 1 which has AFS equals to AAM.
+#'
+#' Using cases 1 and 2 data, the modeled's output is marriage rate after sexual
+#' debut -- this can be used in EPPASM for example. But cases 3, 4, 5 can not be
+#' used as they either do not have information.
+#'
+#' To use all data, we can formulate the AFS as time varying covariate -- need
+#' to use time splitting format.
+#'
+#' ## AAM - since sexual debut
+#'
+#' \cref{tab:aam_equal_afs} shows among sexually debuted respondents, nearly 40%
+#' had also married at the same age. This proportion needs to be modelled
+#' similar to @defreitascostaZeroinflatedcensoredWeibullGamma2021.
+dta |>
+    filter(afs != 0, marriage_age >= afs) %>%
+    mutate(aam_equal_afs = marriage_age == afs) %>%
+    tabyl(aam_equal_afs) %>%
+    knitr::kable(caption = "\\label{tab:aam_equal_afs}Proportion of sexually debuted sample with AFS equals AAM.")
+
+#' The model is formulated with the time since AFS to marriage following a .##
+#' log-skew-logistic with probability $1 - \pi$, $T \sim
+#' SkewLogistic(\alpha, \lambda, \nu)$, and equals zero with probability $\pi$.
+#' 
+#' Likelihood function in R and test running with optim using only an intercept
+#' in the skew logistic's scale.
+sdata <- readRDS('data/marriage_epis_durspl.rds') %>% as_tibble
+
+logll <- function(par, event, t_start, t_end, pointwise = FALSE) {
+    t_start <- t_start / 12
+    t_end <- t_end / 12
+    pi <- par["pi"]
+    b_0 <- par["b_0"]
+    p <- par["p"]
+    gamma <- par["gamma"]
+    ll = list()
+    for (i in 1:length(event)) {
+        if (t_end[i] == t_start[i]) {
+            ll[[i]] = log(pi)
+        } else {
+            lambda = exp(b_0)
+            if (event[i] == 1) {
+                # prob_event <- sskewlogis(t_start[i], lambda, p, gamma) - sskewlogis(t_end[i], lambda, p, gamma)
+                prob_event <- dskewlogis(t_end[i], lambda, p, gamma) 
+                ll[[i]] <- log((1 - pi) * prob_event)
+            } else {
+                prob_event <- sskewlogis(t_end[i], lambda, p, gamma)
+                ll[[i]] <- log((1 - pi) * prob_event)
+            }
+        }
+    }
+    if (!pointwise)
+        ll <- sum(unlist(ll))
+    ll
+}
+dfit <- function(x, fit) ktools::dskewlogis(x, exp(fit$par["b_0"]), fit$par["p"], fit$par["gamma"])
+
+# fit 1000 first
+ff <- sdata[1:1000, ] %$% optim(
+    c(pi = .1, b_0 = 0, p = 8, gamma = 1),
+    logll,
+    event = event, t_start = t_start, t_end = t_end,
+    control = list(fnscale = -1)
+)
+# Convergence
+ff$convergence
+
+#' Fitted parameters
+ff$par
+
+# compare to data proportion of zero
+sdata %>% head(1000) %>% count(t_end == t_start) %>% mutate(pc = n/sum(n))
+
+sdata %>%
+    head(1000) %>%
+    left_join(marriage_epis %>% select(caseid, duration), by = "caseid") %>%
+    filter(duration.y != 0, first_sex_cmc <= first_union_cmc) %>%
+    ggplot() +
+    geom_density(aes(duration.y / 12, color = factor(age_start/12))) +
+    geom_line( aes(x, y, color = "Fitted"), tibble( x = seq(0, 25, .1), y = dfit(x, ff)), size = 2) 
+
 #' 
 #' # Methods
 #'
