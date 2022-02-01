@@ -69,4 +69,6 @@ marriage_epis_durspl %<>%
     age_start = time_start - dob_cmc,
     age_end = age_start + duration
   )
-summary(fitA)
+
+saveRDS(marriage_epis_durspl, "data/marriage_epis.rds")
+saveRDS(marriage_epis_durspl, "data/marriage_epis_durspl.rds")
