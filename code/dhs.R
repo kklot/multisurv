@@ -483,6 +483,54 @@ sdata %>%
     ggplot() +
     geom_density(aes(duration.y / 12, color = factor(age_start/12))) +
     geom_line( aes(x, y, color = "Fitted"), tibble( x = seq(0, 25, .1), y = dfit(x, ff)), size = 2) 
+# bs with mgcv
+library(mgcv)
+
+"data/marriage_epis_durspl.rds" %>%
+    readRDS() %>%
+    mutate(
+        py =  if_else(t_end == t_start, log(1/365), log((t_end - t_start)/12)),
+        episode = as.numeric(episode),
+        age_start = age_start / 12, 
+        zero = as.integer(t_end == t_start)
+    ) -> sdata
+
+zero <- gam(
+    zero ~ s(age_start) + s(age_start, by = sex),
+    family = binomial,
+    data = sdata %>% mutate(sex = if_else(sex=='male', 0, 1))
+)
+
+newd <- crossing(sex = 0:1, episode = 1:10, age_start = 10:40)
+zero_d <- tibble(newd,
+    zero = predict(zero, newd, type = "response"), 
+    hz = zero / (1 - zero)
+)
+
+tst <- gam(
+    event ~ 1 + s(episode, bs = 'cr') + s(age_start, bs = 'cr') + 
+                s(episode, by = sex, bs = 'cr') + s(age_start, by = sex, bs = 'cr'),
+    family = "poisson",
+    data = sdata %>% mutate(sex = if_else(sex == 'male', 0, 1)), 
+    subset = t_end != t_start,
+    offset = py
+)
+
+pst <- bind_cols(hz = predict(tst, newd, type = 'response'), newd)
+
+#+ Rate_of_marriage, fig.cap = 'Rate of marriage and probability of AFS == AAM'
+zero_d %>%
+    mutate(episode = 0, type = "Probability of AAM = AFS") %>%
+    bind_rows(pst %>% mutate(type = "Rate of marriage by year after sexual debut")) %>%
+    mutate(sex = if_else(sex == 0, "Male", "Female")) %>%
+    ggplot(aes(age_start, hz, color = factor(episode))) +
+    facet_wrap(~ type + sex, scales = "free") +
+    geom_line() +
+    labs(
+        x = "Age", y = "Marriage rate", color = "Years after sexual debut",
+        title = "Marriage rate among sexually debutted"
+    ) +
+    theme(legend.position = 'bottom') + guides(color = guide_legend(nrow=1))
 
 #' 
 #' # Methods
