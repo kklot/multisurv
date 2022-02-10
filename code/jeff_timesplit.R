@@ -92,5 +92,5 @@ marriage_epis_durspl %<>%
     age_end = age_start + duration
   )
 
-saveRDS(marriage_epis_durspl, "data/marriage_epis.rds")
+saveRDS(marriage_epis, "data/marriage_epis.rds")
 saveRDS(marriage_epis_durspl, "data/marriage_epis_durspl.rds")
