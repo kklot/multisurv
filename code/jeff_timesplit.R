@@ -76,7 +76,7 @@ marriage_epis <- filter(marriage_epis, time_end >= time_start)
 
 
 #' Split episodes by single_year
-cuts <- seq(12, max(marriage_epis$duration), 12)
+cuts <- seq(6, max(marriage_epis$duration), 6)
 
 marriage_epis_durspl <- ktools::surv_split(
   marriage_epis, duration = "duration", event = "event", cuts = cuts
