@@ -7,7 +7,8 @@ library(ktools)
 
 #' Malawi 2015 DHS
 
-ir <- readRDS(get_datasets("MWIR7AFL.ZIP")[[1]])
+ir <- readRDS(downloads[[1]])
+mr <- readRDS(downloads[[2]])
 
 df <- ir %>%
   transmute(
@@ -24,8 +25,29 @@ df <- ir %>%
     marital_status = as_factor(v501),
     marriage_age = v511,
     first_union_cmc = v509,
-    n_union = v503
+    n_union = v503, 
+    sex = 'female'
   )
+
+df <- mr %>%
+  transmute(
+    mcaseid,
+    psu = mv021,
+    strata = mv023,
+    weights = mv005,
+    dob_cmc = mv011,
+    doi_cmc = mv008,
+    afs = mv525,
+    afs_recode = mv531,
+    afs_flag = as_factor(mv532),
+    first_birth_cmc = NA,
+    marital_status = as_factor(mv501),
+    marriage_age = mv511,
+    first_union_cmc = mv509,
+    n_union = mv503,
+    sex = "male"
+  ) %>%
+  bind_rows(df)
 
 #' Minimal dataset; no faffing with weights, etc.
 df <- df %>%
@@ -34,7 +56,7 @@ df <- df %>%
     afs = if_else(afs == 0, NA_real_, as.double(afs)),
     first_sex_cmc = if_else(eversex, dob_cmc + afs * 12, NA_real_)
   ) %>%
-  select(caseid, dob_cmc, doi_cmc, eversex, first_sex_cmc, first_union_cmc)
+  select(caseid, sex, dob_cmc, doi_cmc, eversex, first_sex_cmc, first_union_cmc)
 
 #' Define start and end of calendar periods, duration periods and age periods
 marriage_epis <- df %>%
