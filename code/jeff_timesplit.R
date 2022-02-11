@@ -31,7 +31,7 @@ df <- ir %>%
 
 df <- mr %>%
   transmute(
-    mcaseid,
+    caseid = mcaseid,
     psu = mv021,
     strata = mv023,
     weights = mv005,
