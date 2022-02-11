@@ -35,6 +35,10 @@ library(ktools)
 remotes::install_github("kklot/inlar")
 library(inlar)
 
+
+here::i_am("code/dhs.R")
+library(here)
+
 #' # Review of mixture survival model
 #'
 #' The most well-known survival mixture model is the 'cure' model
@@ -121,8 +125,6 @@ library(inlar)
 #' i.e. $T | T > 0 \sim \text{Weibull}()$ (do we?),
 #' @defreitascostaZeroinflatedcensoredWeibullGamma2021 did exactly this but used
 #' the normal Weibull distribution in their likelihood formula.
-#' 
-#' 
 #'  
 #' $$\begin{aligned}
 #' \begin{aligned}
@@ -313,7 +315,6 @@ dta %<>%
         t_separate = if_else(marital_status %in% 4:5, age, NA_real_),
         censored = marital_status %in% 2:5
     )
-dta
 
 #' 
 #' ## Dissolution - time since married
