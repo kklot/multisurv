@@ -35,6 +35,7 @@ library(ktools)
 remotes::install_github("kklot/inlar")
 library(inlar)
 
+library(mgcv, help, pos = 2, lib.loc = NULL)
 
 here::i_am("code/dhs.R")
 library(here)
@@ -424,70 +425,75 @@ dta |>
     tabyl(aam_equal_afs) %>%
     knitr::kable(caption = "\\label{tab:aam_equal_afs}Proportion of sexually debuted sample with AFS equals AAM.")
 
-#' The model is formulated with the time since AFS to marriage following a .##
-#' log-skew-logistic with probability $1 - \pi$, $T \sim
-#' SkewLogistic(\alpha, \lambda, \nu)$, and equals zero with probability $\pi$.
+#' However, if computing AFS as $\text{date of birth} + \text{AFS} \times 12$,
+#' proportion reduces drastically, from 40% to 1% and 4% in female and male respectively.
+#'
+here("data", "marriage_epis.rds") %>%
+    readRDS() %>%
+    group_by(sex) %>%
+    summarise(n = sum(duration == 0), pc = n / n()) %>%
+    knitr::kable(caption = "\\label{tab:aam_afs_reduce}Percent with AFS equals AAM when doing AFS by CMC")
+
+#' Compare with "cure model", mixture model with a point mass at zero is not as
+#' needed: the cure model estimates unknown cure rate from censored observations
+#' which change the hazard estimates, i.e.,
+#'
+#' $$h(t) = \dfrac{(1 - \pi)f(t)}{\pi + (1 - \pi) S(t)}$$
+#'
+#' with $\pi$ the cure rate. The appearance of $\pi$ in the denominator is
+#' because it represents the theoretical probability of an event happened at
+#' infinite time. In zero-mass model, however, there a no hidden process as the
+#' zeroed observations have been observed. In addition, the zero-mass proportion
+#' does not contribute to the hazard.
+#'
+#' $$h(t) = \dfrac{(1 - \pi_0)f(t)}{(1 - \pi_0) S(t)}, \; t > 0$$
+#'
+#' where $\pi_0$ the proportion that the event occurred at time zero, thus no
+#' contributing towards survival probability in the denominator.
+#'
+#' In addition, from sexual debut's perspective, individuals who have AAM the
+#' same AFS and who have AAM after AFS could be considered as two independent
+#' processes. The former is less proactive in making sexual debut than the
+#' latter.
+#'
+#' We can fit independent likelihood for the whole data as
+#'
+#' $$L(\theta, D) = \prod_{t_i = 0} \pi_0 \prod_{t_i \neq 0} (1 - \pi_0)
+#' \prod_{t_i \neq 0} f(t_i)^{\delta_i} S(t_i)^{1 - \delta_i}$$
+#'
+#' with $Z = 1$ if $t_i = 0$ and $Z =0$ otherwise.
+#'
+#' $$Z \sim Binomial(n, \pi_0)$$
 #' 
-#' Likelihood function in R and test running with optim using only an intercept
-#' in the skew logistic's scale.
-sdata <- readRDS('data/marriage_epis_durspl.rds') %>% as_tibble
-
-logll <- function(par, event, t_start, t_end, pointwise = FALSE) {
-    t_start <- t_start / 12
-    t_end <- t_end / 12
-    pi <- par["pi"]
-    b_0 <- par["b_0"]
-    p <- par["p"]
-    gamma <- par["gamma"]
-    ll = list()
-    for (i in 1:length(event)) {
-        if (t_end[i] == t_start[i]) {
-            ll[[i]] = log(pi)
-        } else {
-            lambda = exp(b_0)
-            if (event[i] == 1) {
-                # prob_event <- sskewlogis(t_start[i], lambda, p, gamma) - sskewlogis(t_end[i], lambda, p, gamma)
-                prob_event <- dskewlogis(t_end[i], lambda, p, gamma) 
-                ll[[i]] <- log((1 - pi) * prob_event)
-            } else {
-                prob_event <- sskewlogis(t_end[i], lambda, p, gamma)
-                ll[[i]] <- log((1 - pi) * prob_event)
-            }
-        }
-    }
-    if (!pointwise)
-        ll <- sum(unlist(ll))
-    ll
-}
-dfit <- function(x, fit) ktools::dskewlogis(x, exp(fit$par["b_0"]), fit$par["p"], fit$par["gamma"])
-
-# fit 1000 first
-ff <- sdata[1:1000, ] %$% optim(
-    c(pi = .1, b_0 = 0, p = 8, gamma = 1),
-    logll,
-    event = event, t_start = t_start, t_end = t_end,
-    control = list(fnscale = -1)
-)
-# Convergence
-ff$convergence
-
-#' Fitted parameters
-ff$par
-
-# compare to data proportion of zero
-sdata %>% head(1000) %>% count(t_end == t_start) %>% mutate(pc = n/sum(n))
-
-sdata %>%
-    head(1000) %>%
-    left_join(marriage_epis %>% select(caseid, duration), by = "caseid") %>%
-    filter(duration.y != 0, first_sex_cmc <= first_union_cmc) %>%
-    ggplot() +
-    geom_density(aes(duration.y / 12, color = factor(age_start/12))) +
-    geom_line( aes(x, y, color = "Fitted"), tibble( x = seq(0, 25, .1), y = dfit(x, ff)), size = 2) 
-# bs with mgcv
-library(mgcv)
-
-"data/marriage_epis_durspl.rds" %>%
+#' $$logit(\pi_0) =  \beta_0 + fn(age) $$
+#'
+#' $fn(age)$ here is a smoothed function of age, the model is fitted separately
+#' for each sex.
+#'
+#' Consider the AAM sample that are observed from the AFS to the occurrence
+#' marriage. Observation can be right censored if the last follow-up time is
+#' before the occurrence of the event. By partitioning the time axis into small
+#' intervals, the number of events in each interval is approximately Poisson
+#' with mean $\mu(t) = h(t) P(t)$, where $P(t)$ is the total person-time in the
+#' interval. The time at risk of each subject can thus be split into $n$ bins or
+#' time intervals common to all subjects (using `ktools::surv_split` to keep
+#' zero time subjects). The bin of six months was chosen so that hazard can be
+#' considered approximately constant within each interval.
+#'
+#' Let $t$ denotes the vector of the bins (`episode` variable), $t_i$
+#' representing the time for bin $i = 1,..., n$. The vectors $y(t)$ and $P(t)$
+#' represent the total number of events observed and the total person-year in
+#' each interval. Using the Poisson likelihood to approximate the general
+#' likelihood for survival data, the hazard can be estimated by modeling the
+#' expected number of events, $\mu(t)$, in each interval as a Poisson variable
+#' by using $P(t)$ as an offset term:
+#'
+#' $$\log[\mu(t)] =  fn(t) + fn(age) + \log[P(t)]$$,
+#'
+#' where $fn(t)$ denotes the logarithm of the hazard and $fn(age)$ denotes the
+#' smoothed effect of age (cubic splines). Similarly, this model is also fitted
+#' separately for each sex.
+here('data', 'marriage_epis_durspl.rds') %>%
     readRDS() %>%
     mutate(
         py =  if_else(t_end == t_start, log(1/365), log((t_end - t_start)/12)),
@@ -496,6 +502,7 @@ library(mgcv)
         zero = as.integer(t_end == t_start)
     ) -> sdata
 
+#+ fit_zero, cache=TRUE
 zero <- gam(
     zero ~ s(age_start) + s(age_start, by = sex),
     family = binomial,
@@ -508,6 +515,7 @@ zero_d <- tibble(newd,
     hz = zero / (1 - zero)
 )
 
+#+ fit_gam, cache = TRUE
 tst <- gam(
     event ~ 1 + s(episode, bs = 'cr') + s(age_start, bs = 'cr') + 
                 s(episode, by = sex, bs = 'cr') + s(age_start, by = sex, bs = 'cr'),
@@ -517,8 +525,23 @@ tst <- gam(
     offset = py
 )
 
-pst <- bind_cols(hz = predict(tst, newd, type = 'response'), newd)
+pst <- bind_cols(hz = predict(tst, newd, type = "response"), newd)
 
+#' \cref{fig:Rate_of_marriage} (top rows) shows that sexual debuted when
+#' marriage was more prevalence in female than male, happened in younger age in
+#' female than male (peaked at 15 vs 20 for female and male, respectively).
+#' 
+#' Rate of marriage estimates by age shows that, given an individual had ever
+#' had sex, rate of marriage is highest in age 20 and 25 in female and male,
+#' respectively. 
+#' 
+#' Rate of marriage is the highest within one year of sexual debut and there
+#' were little differences when year of sexual debut was 5+ years, stabilizing
+#' at approximately 0.2/year in both sex.
+#' 
+#' For EPPASM: use the probability estimate to move immediately the newly sexual
+#' debuts and the rate to move previously sexually debutted to married compartment.
+#' 
 #+ Rate_of_marriage, fig.cap = 'Rate of marriage and probability of AFS == AAM'
 zero_d %>%
     mutate(episode = 0, type = "Probability of AAM = AFS") %>%
