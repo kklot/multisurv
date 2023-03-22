@@ -129,6 +129,8 @@ dta %>%
         )
     ) %>%
     allot(tmp)
+```
+
 ## Check conditions if missing or incorect
 
 ```{r chek_conditions}
