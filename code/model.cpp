@@ -9,15 +9,9 @@ matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true) {
     qM.setZero();
     qM(0, 1) = qv[0];
     qM(1, 2) = qv[1];
-    qM(2, 3) = qv[2];
-    qM(2, 4) = qv[3];
-    qM(2, 5) = qv[4];
-    qM(3, 6) = qv[5];
-    qM(4, 6) = qv[6];
-    qM(5, 6) = qv[7];
-    qM(6, 3) = qv[8];
-    qM(6, 4) = qv[9];
-    qM(6, 5) = qv[10]; // this might be shortened such as A(Eigen::placeholders::all,{4,2,5,5,3})?
+    qM(2, {3,4,5}) = qv({2,3,4});
+    qM({3,4,5}, 6) = qv({5,6,7});
+    qM(6, {3,4,5}) = qv({8,9,10});
     qM.diagonal() = Type(-1) * qM.rowwise().sum();
     matrix<Type> mexp = qM.exp(); // https://eigen.tuxfamily.org/dox/unsupported/group__MatrixFunctions__Module.html#matrixbase_exp
     if (!diag) for (int i = 0; i < 7; ++i) mexp(i, i) = 0.0;
