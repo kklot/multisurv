@@ -4,7 +4,7 @@
 template<class Type>
 matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true) {
     Type lp = betav[0] + betav[1] * (x/100);
-    qv = qv * exp(lp);
+    qv *= exp(lp);
     matrix<Type> qM(7,7);
     qM.setZero();
     qM(0, 1) = qv[0];
@@ -148,7 +148,11 @@ Type objective_function<Type>::operator() ()
     }
   }
   dll += prior - sum(log(o));
+  matrix<Type> est(51, 8);
+  for (int i = 0; i < 51; i++)
+    est.row(i) = qv * exp( betav[0] + betav[1] * (i/100) );
   REPORT(betav);
   REPORT(qv);
+  REPORT(est);
   return dll;
 }
