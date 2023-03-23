@@ -45,7 +45,7 @@ Type objective_function<Type>::operator() ()
 
   // Intensity: change to loggamma?
   PARAMETER_VECTOR(lqv); 
-  prior -= dnorm(lqv, sd_q(0), sd_q(1), true).sum();
+  prior -= dnorm(lqv, sd_q(0), sd_q(1), true).sum() + sum(lqv);
   vector<Type> qv = exp(lqv);
 
   vector<Type> o(afs.size());
