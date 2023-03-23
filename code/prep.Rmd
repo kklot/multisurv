@@ -43,7 +43,6 @@ x <- 1 # adapt from multiple datasets
 o <- readRDS(downloads[[x]]) %>%
     as_tibble() %>%
     mutate(lab = datasets$SurveyId[x])
-x <- 2
 ```
 
 Extract and converting date time 
@@ -72,7 +71,8 @@ dta <- o %>%
 
 #' Data cleaning
 #'
-dta %<>% filter(!(afs > age | marriage_age > age))
+dta %<>% filter(haven::zap_label(afs) <= age)
+dta %<>% filter(marriage_age <= age)
 dta %<>% filter(!(marital_status != 0 & afs == 0))
 dta <- dta |>
     mutate(across(c(marital_status, n_union), haven::as_factor)) %>%
@@ -129,6 +129,7 @@ dta %>%
         )
     ) %>%
     allot(tmp)
+saveRDS(tmp, here::here('data/prep.rds'))
 ```
 
 ## Check conditions if missing or incorect
@@ -283,7 +284,7 @@ for (i in 1:NN) {
                                 qp <- qp %*% pM(aam[i] + a, betav, qv, qM)[c(3,J), c(3,J)]
                         }
                     }
-                    if (J != 7)
+                    if (ms[i] != 7)
                         o[i] = o[i] * 
                         (
                             pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
@@ -300,7 +301,7 @@ for (i in 1:NN) {
                             pM(aam[i] + n_N[i] - 2, betav, qv, qM)[J, J] *
                             pM(aam[i] + n_N[i] - 1, betav, qv, qM)[J, J]
                         )
-                    if (J == 7)
+                    if (ms[i] == 7)
                         o[i] = o[i] *
                             pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
                             pM(aam[i] + 1, betav, qv, qM)[3:6, 3:7] %*%
