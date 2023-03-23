@@ -5,7 +5,7 @@ TMB::config(tape.parallel = 0, DLL = "model")
 
 init <- list(
     betav = rnorm(2, 0, 0.1),
-    lqv = rnorm(11, 0, 0.1)
+    lqv = rnorm(8, log(0.1), 1)
 )
 
 data <- readRDS(here("data/prep.rds")) %>%

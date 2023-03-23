@@ -11,7 +11,7 @@ matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true) {
     qM(1, 2) = qv[1];
     qM(2, {3,4,5}) = qv({2,3,4});
     qM({3,4,5}, 6) = qv({5,6,7});
-    qM(6, {3,4,5}) = qv({8,9,10});
+    qM(6, {3,4,5}) = qv({2,3,4}); // remarried > disso = married > disso, we could add a(three) scaleing parameter as well?
     qM.diagonal() = Type(-1) * qM.rowwise().sum();
     matrix<Type> mexp = qM.exp(); // https://eigen.tuxfamily.org/dox/unsupported/group__MatrixFunctions__Module.html#matrixbase_exp
     if (!diag) for (int i = 0; i < 7; ++i) mexp(i, i) = 0.0;
@@ -147,7 +147,7 @@ Type objective_function<Type>::operator() ()
         }
     }
   }
-  dll += prior + sum(log(o));
+  dll += prior - sum(log(o));
   REPORT(betav);
   REPORT(qv);
   return dll;
