@@ -1,20 +1,24 @@
 #include <TMB.hpp>
 #include <unsupported/Eigen/MatrixFunctions> // matrix exp
 
-template<class Type>
-matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true) {
-    Type lp = betav[0] + betav[1] * (x/100);
-    qv *= exp(lp);
-    matrix<Type> qM(7,7);
+#define AGE_MAX 50
+#define N_PAR 8
+#define N_Q 7
+template<class Type> // do this smarter, precompute and retrieve
+matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true, bool returnQ = false) {
+    matrix<Type> betam = betav.reshaped(AGE_MAX + 1, N_PAR);
+    matrix<Type> qM(N_Q,N_Q);
     qM.setZero();
-    qM(0, 1) = qv[0];
-    qM(1, 2) = qv[1];
-    qM(2, {3,4,5}) = qv({2,3,4});
+    for (int i = 0; i < N_PAR; i++) qv[i] *= exp(betam(x, i));
+    qM(0, 1) = qv[0]; // debut
+    qM(1, 2) = qv[1]; // marriage
+    qM(2, {3,4,5}) = qv({2,3,4}); // marriage dissolution
     qM({3,4,5}, 6) = qv({5,6,7});
-    qM(6, {3,4,5}) = qv({2,3,4}); // remarried > disso = married > disso, we could add a(three) scaleing parameter as well?
+    qM(6, {3,4,5}) = qv({2,3,4}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
     qM.diagonal() = Type(-1) * qM.rowwise().sum();
+    if (returnQ) return(qv.matrix());
     matrix<Type> mexp = qM.exp(); // https://eigen.tuxfamily.org/dox/unsupported/group__MatrixFunctions__Module.html#matrixbase_exp
-    if (!diag) for (int i = 0; i < 7; ++i) mexp(i, i) = 0.0;
+    if (!diag) for (int i = 0; i < N_Q; ++i) mexp(i, i) = 0.0;
     return(mexp);
 }
 
@@ -42,8 +46,11 @@ Type objective_function<Type>::operator() ()
   // Data model
   PARAMETER_VECTOR(betav);
   prior -= dnorm(betav, sd_b(0), sd_b(1), true).sum();
+  // constraints IID within a vector
+  vector<Type> csum = betav.reshaped(AGE_MAX + 1, N_PAR).colwise().sum();
+  prior -= dnorm(csum, Type(0.0), Type(0.001) * (AGE_MAX + 1), true).sum();
 
-  // Intensity: change to loggamma?
+  // Baseline intensity
   PARAMETER_VECTOR(lqv); 
   prior -= dnorm(lqv, sd_q(0), sd_q(1), true).sum() + sum(lqv);
   vector<Type> qv = exp(lqv);
@@ -148,9 +155,8 @@ Type objective_function<Type>::operator() ()
     }
   }
   dll += prior - sum(log(o));
-  matrix<Type> est(51, 8);
-  for (int i = 0; i < 51; i++)
-    est.row(i) = qv * exp( betav[0] + betav[1] * (i/100) );
+  matrix<Type> est(AGE_MAX + 1, N_PAR); 
+  for (int i = 0; i < AGE_MAX; i++) est.row(i) = pM(i, betav, qv, true, true);
   REPORT(betav);
   REPORT(qv);
   REPORT(est);
