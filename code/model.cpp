@@ -1,6 +1,4 @@
 #include <TMB.hpp>
-#include <unsupported/Eigen/MatrixFunctions> // matrix exp
-// #include <unsupported/Eigen/CXX11/Tensor>
 
 #define AGE_MAX 50
 #define N_AGE 51
@@ -20,7 +18,7 @@ matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true, bo
     qM(6, {3,4,5}) = qv({2,3,4}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
     qM.diagonal() = Type(-1) * qM.rowwise().sum();
     if (returnQ) return(qv.matrix());
-    matrix<Type> mexp = qM.exp(); // https://eigen.tuxfamily.org/dox/unsupported/group__MatrixFunctions__Module.html#matrixbase_exp
+    matrix<Type> mexp = expm(qM);
     if (!diag) for (int i = 0; i < N_Q; ++i) mexp(i, i) = 0.0;
     return(mexp);
 }
