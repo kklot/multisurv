@@ -26,7 +26,6 @@ matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true, bo
 // Container to avoid repeated evaluation of pM 
 template <class Type> 
 struct Kube {
-    typedef Eigen::Map<matrix<Type> > map;
     vector<Type> masterQ;
     vector<Type> masterP;
     matrix<Type> qM;
@@ -59,7 +58,7 @@ struct Kube {
         }
     };
     matrix<Type> operator()(int a, bool diag = true){
-        matrix<Type> ans = map(&masterP(0) + a * len, 7, 7);
+        matrix<Type> ans = masterP(Eigen::seqN(a * len, len)).reshaped(N_Q, N_Q);
         if (!diag) for (int i = 0; i < N_Q; ++i) ans(i, i) = Type(0);
         return ans;
     }
