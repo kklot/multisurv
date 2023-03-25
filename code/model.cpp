@@ -1,12 +1,15 @@
 #include <TMB.hpp>
 #include <unsupported/Eigen/MatrixFunctions> // matrix exp
+// #include <unsupported/Eigen/CXX11/Tensor>
 
 #define AGE_MAX 50
+#define N_AGE 51
 #define N_PAR 8
 #define N_Q 7
-template<class Type> // do this smarter, precompute and retrieve
+
+template<class Type> 
 matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true, bool returnQ = false) {
-    matrix<Type> betam = betav.reshaped(AGE_MAX + 1, N_PAR);
+    matrix<Type> betam = betav.reshaped(N_AGE, N_PAR);
     matrix<Type> qM(N_Q,N_Q);
     qM.setZero();
     for (int i = 0; i < N_PAR; i++) qv[i] *= exp(betam(x, i));
