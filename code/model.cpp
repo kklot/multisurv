@@ -5,45 +5,29 @@
 #define N_PAR 8
 #define N_Q 7
 
-template<class Type> 
-matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true, bool returnQ = false) {
-    matrix<Type> betam = betav.reshaped(N_AGE, N_PAR);
-    matrix<Type> qM(N_Q,N_Q);
-    qM.setZero();
-    for (int i = 0; i < N_PAR; i++) qv[i] *= exp(betam(x, i));
-    qM(0, 1) = qv[0]; // debut
-    qM(1, 2) = qv[1]; // marriage
-    qM(2, {3,4,5}) = qv({2,3,4}); // marriage dissolution
-    qM({3,4,5}, 6) = qv({5,6,7});
-    qM(6, {3,4,5}) = qv({2,3,4}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
-    qM.diagonal() = Type(-1) * qM.rowwise().sum();
-    if (returnQ) return(qv.matrix());
-    matrix<Type> mexp = expm(qM);
-    if (!diag) for (int i = 0; i < N_Q; ++i) mexp(i, i) = 0.0;
-    return(mexp);
-}
-
-// Container to avoid repeated evaluation of pM 
-template <class Type> 
+template <class T> 
 struct Kube {
-    vector<Type> masterQ;
-    vector<Type> masterP;
-    matrix<Type> qM;
-    matrix<Type> pM;
+    vector<T> masterQ;
+    vector<T> masterP;
+    matrix<T> qM;
+    matrix<T> pM;
+    matrix<T> est;
     int len;
     Kube () {};
-    Kube (vector<Type> betav, vector<Type> qv) : 
+    Kube (vector<T> betav, vector<T> qv) : 
         masterQ(N_AGE * N_Q * N_Q), 
         masterP(N_AGE * N_Q * N_Q), 
         qM(N_Q, N_Q), 
         pM(N_Q, N_Q), 
+        est(N_AGE, N_PAR),
         len(N_Q * N_Q)
     {
         masterP.setZero();
         masterQ.setZero();
         betav = exp(betav);
-        matrix<Type> betam = betav.reshaped(N_AGE, N_PAR);
+        matrix<T> betam = betav.reshaped(N_AGE, N_PAR);
         betam.array().rowwise() *= qv.transpose(); // *= only array
+        est = betam; // save for reporting
         for (int i = 0; i < N_AGE; i++) {
             qM.setZero(); 
             qM(0, 1) = betam(i, 0); // debut
@@ -51,15 +35,15 @@ struct Kube {
             qM(2, {3,4,5}) = betam(i, {2,3,4}); // marriage dissolution
             qM({3,4,5}, 6) = betam(i, {5,6,7}); // disso > remarried
             qM(6, {3,4,5}) = betam(i, {2,3,4}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
-            qM.diagonal() = Type(-1) * qM.rowwise().sum();
-            memcpy(&masterQ(0) + i * len, &qM(0), sizeof(Type) * len);
+            qM.diagonal() = T(-1) * qM.rowwise().sum();
+            memcpy(&masterQ(0) + i * len, &qM(0), sizeof(T) * len);
             pM = expm(qM);
-            memcpy(&masterP(0) + i * len, &pM(0), sizeof(Type) * len);
+            memcpy(&masterP(0) + i * len, &pM(0), sizeof(T) * len);
         }
     };
-    matrix<Type> operator()(int a, bool diag = true){
-        matrix<Type> ans = masterP(Eigen::seqN(a * len, len)).reshaped(N_Q, N_Q);
-        if (!diag) for (int i = 0; i < N_Q; ++i) ans(i, i) = Type(0);
+    matrix<T> operator()(int a, bool diag = true){
+        matrix<T> ans = masterP(Eigen::seqN(a * len, len)).reshaped(N_Q, N_Q);
+        if (!diag) for (int i = 0; i < N_Q; ++i) ans(i, i) = T(0);
         return ans;
     }
 };
@@ -105,93 +89,93 @@ Type objective_function<Type>::operator() ()
   for (int i = 0; i < afs.size(); i++) {
     if (afs[i] == 0) {
         for (int a = 0; a < age[i]; a++) 
-            o[i] *= pM(a, betav, qv)(0, 0);
+            o[i] *= KM(a)(0, 0);
     } else {
         for (int a = 0; a < afs[i]; a++) 
-            o[i] *= pM(a, betav, qv)(0, 0);
-        o[i] *= pM(afs[i], betav, qv)(0, 1);
+            o[i] *= KM(a)(0, 0);
+        o[i] *= KM(afs[i])(0, 1);
         if (n_X[i] == 0 & aam[i] == 0) 
-            o[i] *= pM(afs[i], betav, qv)(1, 1);
+            o[i] *= KM(afs[i])(1, 1);
         if (n_X[i] > 0) 
             for (int a = afs[i]; a < (afs[i] + n_X[i]); a++)
-                o[i] *= pM(a, betav, qv)(1, 1); // XX(afs:(afs+n_X))
+                o[i] *= KM(a)(1, 1); // XX(afs:(afs+n_X))
         if (aam[i] > 0) {
-            o[i] *= pM(aam[i], betav, qv)(1, 2); // XM(aam)
+            o[i] *= KM(aam[i])(1, 2); // XM(aam)
             if (u[i] == 1) {
                 if (n_M[i] == 0) 
-                    o[i] *= pM(aam[i], betav, qv)(2, 2); // MM(aam)
+                    o[i] *= KM(aam[i])(2, 2); // MM(aam)
                 if (n_M[i] > 0)
                     for (int a = aam[i]; a < age[i]; a++) 
-                        o[i] *= pM(a, betav, qv)(2, 2); // MM(aam:age)
+                        o[i] *= KM(a)(2, 2); // MM(aam:age)
                 if (n_M[i] == -2908) {
                     int J = ms[i] - 1;
                     if (n_N[i] == 0) 
-                        o[i] *= pM(aam[i], betav, qv)(2, J); // MJ(aam)
+                        o[i] *= KM(aam[i])(2, J); // MJ(aam)
                     if (n_N[i] > 0) {
                         matrix<Type> oo(2, 2); oo.setOnes();
                         if (n_N[i] > 1)
                             for (int a = 1; a < n_N[i] - 1; a++)
-                                oo *= pM(aam[i] + a, betav, qv)({2, J}, {2, J});
-                        o[i] *= pM(aam[i], betav, qv)(2, {2, J}) * oo * 
-                                pM(aam[i] + n_N[i], betav, qv)({2, J}, J);
+                                oo *= KM(aam[i] + a)({2, J}, {2, J});
+                        o[i] *= KM(aam[i])(2, {2, J}) * oo * 
+                                KM(aam[i] + n_N[i])({2, J}, J);
                     }
                 }
             }
             if (u[i] > 1) {
                 int J = ms[i] - 1;
                 if (n_N[i] == 3) { // M...J(aam:age+3)
-                    o[i] *= (pM(aam[i] + 0, betav, qv)(2, {3,4,5}) *
-                            pM(aam[i] + 1, betav, qv)({3,4,5}, 6) *
-                            pM(aam[i] + 2, betav, qv)(6, J)).value(); // 77 = RM = RR =? MM
+                    o[i] *= (KM(aam[i] + 0)(2, {3,4,5}) *
+                            KM(aam[i] + 1)({3,4,5}, 6) *
+                            KM(aam[i] + 2)(6, J)).value(); // 77 = RM = RR =? MM
                 }
                 if (n_N[i] == 4) { // M...J(aam:age+4)
                     if (ms[i] != 7)
-                        o[i] *= (pM(aam[i] + 0, betav, qv)(2, {2,3,4,5}) *
-                                pM(aam[i] + 1, betav, qv)({2,3,4,5}, {3,4,5,6}) *
-                                pM(aam[i] + 2, betav, qv, false)({3,4,5,6}, {J, 6}) *
-                                pM(aam[i] + 3, betav, qv)({J, 6}, J)).value();
+                        o[i] *= (KM(aam[i] + 0)(2, {2,3,4,5}) *
+                                KM(aam[i] + 1)({2,3,4,5}, {3,4,5,6}) *
+                                KM(aam[i] + 2, false)({3,4,5,6}, {J, 6}) *
+                                KM(aam[i] + 3)({J, 6}, J)).value();
                     if (ms[i] == 7)
-                        o[i] *= (pM(aam[i] + 0, betav, qv)(2, {2,3,4,5}) *
-                                pM(aam[i] + 1, betav, qv)({2,3,4,5}, {3,4,5,6}) *
-                                pM(aam[i] + 2, betav, qv)({3,4,5,6}, {3,4,5,6}) *
-                                pM(aam[i] + 3, betav, qv)({3,4,5,6}, 6)).value();
+                        o[i] *= (KM(aam[i] + 0)(2, {2,3,4,5}) *
+                                KM(aam[i] + 1)({2,3,4,5}, {3,4,5,6}) *
+                                KM(aam[i] + 2)({3,4,5,6}, {3,4,5,6}) *
+                                KM(aam[i] + 3)({3,4,5,6}, 6)).value();
                 }
                 if (n_N[i] > 4) { // M...J(aam:age+5+)"
                     matrix<Type> oo(5, 5); oo.setOnes();
                     matrix<Type> qp(2, 2); oo.setOnes();
                     if (n_N[i] > 5) {
                         for (int a = 2; a < (n_N[i] - 4); a++) {
-                            oo *= pM(aam[i] + a, betav, qv)({2,3,4,5,6}, {2,3,4,5,6});
+                            oo *= KM(aam[i] + a)({2,3,4,5,6}, {2,3,4,5,6});
                             if (J != 7)
-                                qp *= pM(aam[i] + a, betav, qv)({2,J}, {2,J});
+                                qp *= KM(aam[i] + a)({2,J}, {2,J});
                         }
                     }
                     if (ms[i] != 7)
                         o[i] *=
                         (
-                            pM(aam[i] + 0, betav, qv)(2, {2,3,4,5}) *
-                            pM(aam[i] + 1, betav, qv)({2,3,4,5}, {2,3,4,5,6}) *
+                            KM(aam[i] + 0)(2, {2,3,4,5}) *
+                            KM(aam[i] + 1)({2,3,4,5}, {2,3,4,5,6}) *
                             oo *
-                            pM(aam[i] + n_N[i] - 3, betav, qv)({2,3,4,5,6}, {3,4,5,6}) *
-                            pM(aam[i] + n_N[i] - 2, betav, qv)({3,4,5,6}, {J, 6}) *
-                            pM(aam[i] + n_N[i] - 1, betav, qv)({J, 6}, J) -
+                            KM(aam[i] + n_N[i] - 3)({2,3,4,5,6}, {3,4,5,6}) *
+                            KM(aam[i] + n_N[i] - 2)({3,4,5,6}, {J, 6}) *
+                            KM(aam[i] + n_N[i] - 1)({J, 6}, J) -
                             // substract one union cases
-                            pM(aam[i] + 0, betav, qv)(2, {2, J}) *
-                            pM(aam[i] + 1, betav, qv)({2, J}, {2, J}) *
+                            KM(aam[i] + 0)(2, {2, J}) *
+                            KM(aam[i] + 1)({2, J}, {2, J}) *
                             qp *
-                            pM(aam[i] + n_N[i] - 3, betav, qv)({2, J}, J) *
-                            pM(aam[i] + n_N[i] - 2, betav, qv)(J, J) *
-                            pM(aam[i] + n_N[i] - 1, betav, qv)(J, J)
+                            KM(aam[i] + n_N[i] - 3)({2, J}, J) *
+                            KM(aam[i] + n_N[i] - 2)(J, J) *
+                            KM(aam[i] + n_N[i] - 1)(J, J)
                         ).value();
                     if (ms[i] == 7)
                         o[i] *=
                         (
-                            pM(aam[i] + 0, betav, qv)(2, {2,3,4,5}) *
-                            pM(aam[i] + 1, betav, qv)({2,3,4,5}, {2,3,4,5,6}) *
+                            KM(aam[i] + 0)(2, {2,3,4,5}) *
+                            KM(aam[i] + 1)({2,3,4,5}, {2,3,4,5,6}) *
                             oo *
-                            pM(aam[i] + 2, betav, qv)({2,3,4,5,6}, {3,4,5,6}) *
-                            pM(aam[i] + 3, betav, qv)({3,4,5,6}, {3,4,5,6}) *
-                            pM(aam[i] + 4, betav, qv)({3,4,5,6}, J)
+                            KM(aam[i] + 2)({2,3,4,5,6}, {3,4,5,6}) *
+                            KM(aam[i] + 3)({3,4,5,6}, {3,4,5,6}) *
+                            KM(aam[i] + 4)({3,4,5,6}, J)
                         ).value();
                 }
             }
@@ -201,6 +185,7 @@ Type objective_function<Type>::operator() ()
   dll += prior - sum(log(o));
   REPORT(betav);
   REPORT(qv);
+  REPORT(KM.est);
   REPORT(KM.masterP);
   REPORT(KM.masterQ);
   return dll;
