@@ -26,7 +26,8 @@ str(data)
 
 init <- list(
     betav = rnorm((MAX_AGE + 1) * N_PAR, 0, 0.1),
-    lqv = rnorm(N_PAR, log(0.1), 1)
+    lqv = rnorm(N_PAR, log(0.1), 1),
+    pacf = c(0, 1)
 )
 str(init)
 
