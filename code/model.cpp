@@ -23,6 +23,48 @@ matrix<Type> pM(int x, vector<Type> betav, vector<Type> qv, bool diag = true, bo
     return(mexp);
 }
 
+// Container to avoid repeated evaluation of pM 
+template <class Type> 
+struct Kube {
+    typedef Eigen::Map<matrix<Type> > map;
+    vector<Type> masterQ;
+    vector<Type> masterP;
+    matrix<Type> qM;
+    matrix<Type> pM;
+    int len;
+    Kube () {};
+    Kube (vector<Type> betav, vector<Type> qv) : 
+        masterQ(N_AGE * N_Q * N_Q), 
+        masterP(N_AGE * N_Q * N_Q), 
+        qM(N_Q, N_Q), 
+        pM(N_Q, N_Q), 
+        len(N_Q * N_Q)
+    {
+        masterP.setZero();
+        masterQ.setZero();
+        betav = exp(betav);
+        matrix<Type> betam = betav.reshaped(N_AGE, N_PAR);
+        betam.array().rowwise() *= qv.transpose(); // *= only array
+        for (int i = 0; i < N_AGE; i++) {
+            qM.setZero(); 
+            qM(0, 1) = betam(i, 0); // debut
+            qM(1, 2) = betam(i, 1); // marriage
+            qM(2, {3,4,5}) = betam(i, {2,3,4}); // marriage dissolution
+            qM({3,4,5}, 6) = betam(i, {5,6,7}); // disso > remarried
+            qM(6, {3,4,5}) = betam(i, {2,3,4}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
+            qM.diagonal() = Type(-1) * qM.rowwise().sum();
+            memcpy(&masterQ(0) + i * len, &qM(0), sizeof(Type) * len);
+            pM = expm(qM);
+            memcpy(&masterP(0) + i * len, &pM(0), sizeof(Type) * len);
+        }
+    };
+    matrix<Type> operator()(int a, bool diag = true){
+        matrix<Type> ans = map(&masterP(0) + a * len, 7, 7);
+        if (!diag) for (int i = 0; i < N_Q; ++i) ans(i, i) = Type(0);
+        return ans;
+    }
+};
+
 template<class Type>
 Type objective_function<Type>::operator() ()
 {
@@ -55,6 +97,8 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(lqv); 
   prior -= dnorm(lqv, sd_q(0), sd_q(1), true).sum() + sum(lqv);
   vector<Type> qv = exp(lqv);
+
+  Kube<Type> KM(betav, qv);
 
   vector<Type> o(afs.size());
   o.setOnes();
@@ -156,10 +200,9 @@ Type objective_function<Type>::operator() ()
     }
   }
   dll += prior - sum(log(o));
-  matrix<Type> est(AGE_MAX + 1, N_PAR); 
-  for (int i = 0; i < AGE_MAX; i++) est.row(i) = pM(i, betav, qv, true, true);
   REPORT(betav);
   REPORT(qv);
-  REPORT(est);
+  REPORT(KM.masterP);
+  REPORT(KM.masterQ);
   return dll;
 }
