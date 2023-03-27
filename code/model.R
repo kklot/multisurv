@@ -21,16 +21,36 @@ expect_true(all((data$afs + data$n_N) <= data$age))
 expect_true(all((data$aam + data$n_N) <= data$age))
 
 data$sd_b <- c(0, 0.1)
-data$sd_q <- c(log(0.1), 1) # log normal mean and sd
+data$sd_q <- c(log(0.001), 0.1) # log normal mean and sd
 str(data)
 
 init <- list(
     betav = rnorm((MAX_AGE + 1) * N_PAR, 0, 0.1),
-    lqv = rnorm(N_PAR, log(0.1), 1),
+    lqv = rnorm(N_PAR, log(0.001), 1),
     pacf = c(0, 1)
 )
 str(init)
 
-obj <- TMB::MakeADFun(data, init, DLL = "model", silent = FALSE)
-fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 1))
+obj <- TMB::MakeADFun(data, init, DLL = "model", silent = TRUE)
+
+fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 0))
+rp <- obj$report(obj$env$last.par.best)
+str(rp)
+
+p_id <- char(VX, XM, MS, MD, MW, SR, DR, WR)
+p_lb <- char(
+    "Sexual debut", "Marriage", "Separate", "Divorce", "Widow",
+    "Separated>>Remarried", "Divorced>>Remarried", "Widowed>>Remarried"
+)
+
+rp$`KM.est` %>%
+    as_tibble() %>%
+    rename_with(~p_lb) %>%
+    rownames_to_column("age") %>%
+    mutate(age = as.numeric(age)) %>%
+    pivot_longer(-age) %>%
+    mutate(name = factor(name, levels = p_lb)) %>%
+    ggplot(aes(age, value, color = name)) +
+    geom_line() +
+    scale_color_manual(values = thematic::okabe_ito())
 

@@ -65,11 +65,12 @@ struct mAR {
         if (phi[1] == 1 - phi.abs()(0) ) phi[1] -= DBL_EPSILON;
         return phi;
     };
-    T operator()(vector<T> pacf, vector<T> x){
+    T operator()(vector<T> pacf, vector<T> x, bool zeroing = true){
         T dll = 0.;
         dll += density::MVNORM(Sigma)(pacf);
         phi = to_phi(pacf);
         dll += density::ARk(phi)(x);
+        if (zeroing)
         dll -= dnorm(sum(x), T(0), T(0.001) * x.size(), true);
         return dll;
     };
