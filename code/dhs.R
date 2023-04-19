@@ -171,13 +171,16 @@ o <- readRDS(downloads[[x]]) %>%
 # Extract and converting date time 
 dta <- o %>%
     select(
-        psu = v021, strata = v023, weights = v005, dob = v011, doi = v008, afs = v531, lab,
+        psu = v021, strata = v023, weights = v005, dob = v011, doi = v008, lab,
+        afs = v531, 
         marriage_age = v511,
         n_union = v503,
         month_1st_union = v507,
         year_1st_union = v508,
         cmc_uninon = v509,
-        marital_status = v501
+        marital_status = v501,
+        union_married = v502,
+        ever_in = v535
     ) %>%
     mutate(
         marriage_age =  if_else(is.na(marriage_age), 0L, marriage_age),
