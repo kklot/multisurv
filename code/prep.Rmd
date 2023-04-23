@@ -83,236 +83,39 @@ dta <- dta |>
     ))
 #' remove those had more than once union with less than 3 years ()
 #' get this back when change to smaller time spliting duration
-dta %<>%
-    filter(!( n_union == 'more than once' & age - marriage_age < 3 ))
+# dta %<>%
+    # filter(!( n_union == 'more than once' & age - marriage_age < 3 ))
 ```
 
 Calculate needed indcator for likelihood
 
 ```{r likelihood_prep}
 dta %>%
-    select(afs, aam = marriage_age, age, u = n_union, ms = marital_status) %>%
+    select(afs, aam = marriage_age, age, u = n_union, ms = marital_status) %>% 
+    mutate(ms = if_else(ms == "union", "married", ms)) %>% 
+    mutate(afs = if_else(afs != 0 & afs >= aam, aam, afs)) %>% # remove VX if VM
     mutate(
-        afs = if_else(afs > aam & afs > 0 & aam > 0, aam, afs),
-        u = case_when(
-            u == "once" ~ 1, 
-            u == "more than once" ~ 2,
+        VV = case_when(afs != 0 ~ afs - 1, otherwise ~ age - 1),
+        VX = case_when(afs != 0 ~ afs, afs == 0 ~ -2908, otherwise ~ age),
+        XX = case_when(afs != 0 & aam != 0 & afs != aam ~ aam - afs, otherwise ~ -2908),
+        XM = case_when(aam != 0 ~ aam, otherwise ~ -2908),
+        MM = case_when(aam != 0 & u == "once" & ms == "married" ~ age - aam, otherwise ~ -2908),
+        MJ = case_when(
+            aam != 0 & !(u == "once" & ms == "married") ~ aam,
+            otherwise ~ -2908, # never had sex
+            ),
+        delta = if_else(MJ > 0, age - aam + 1, -2908), 
+        J = case_when(
+            delta > 0 & ms == "separated" ~ 4,
+            delta > 0 & ms == "divorced" ~ 5,
+            delta > 0 & ms == "widowed" ~ 6,
+            delta > 0 & ms == "married" ~ 7,
             otherwise ~ -2908
-        ),
-        n_V = case_when(
-            afs == 0 ~ age, 
-            afs  > 0 ~ afs, 
-            otherwise ~ -2908
-        ),
-        n_X = case_when(
-            afs != 0 & ms == "never in union" ~ age - afs,
-            afs != 0 & ms != "never in union" ~ aam - afs,
-            otherwise ~ -2908,
-        ),
-        n_M = case_when(
-            aam != 0 & u == 1 & (ms == "married" | ms == "union") ~ age - aam,
-            otherwise ~ -2908
-        ),
-        n_N = case_when(
-            aam != 0 & u == 1 & (!ms %in% c("married", "union")) ~ age - aam,
-            aam != 0 & u > 1  ~ age - aam,
-            otherwise ~ -2908
-        ),
-        ms = case_when(
-            ms == 'never in union' & afs == 0 ~ 1,
-            ms == 'never in union' & afs > 0 ~ 2,
-            u == 1 & (ms == 'married' | ms == 'union') ~ 3,
-            ms == 'separated' ~ 4,
-            ms == 'divorced' ~ 5,
-            ms == 'widowed' ~ 6,
-            u == 2 & (ms == 'married' | ms == 'union') ~ 7 # remarried
-        )
-    ) %>%
-    allot(tmp)
-saveRDS(tmp, here::here('data/prep.rds'))
+            )
+    ) %>% 
+    allot(d)
+
+saveRDS(d, here::here('data/d.rds'))
 ```
 
-## Check conditions if missing or incorect
-
-```{r chek_conditions}
-o <- with(
-    tmp, {
-    o <- vector("character", nrow(tmp))
-    for (i in 1:nrow(tmp)) {
-        if (afs[i] == 0) {
-            o[i] <- paste0(o[i], "VV(1:age)")
-        } else {
-            o[i] <- paste0(o[i], "VV(1:afs)", " * VX(afs)")
-            if (n_X[i] == 0 & aam[i] == 0) { # stay debut afs to age (1 episode)
-                o[i] <- paste0(o[i], " * XX(afs)")
-            }
-            if (n_X[i] > 0) { # stay debut from afs to age
-                o[i] <- paste0(o[i], " * XX(afs:(afs+n_X))")
-            }
-            if (aam[i] > 0) {
-                o[i] <- paste0(o[i], " * XM(aam)")
-                if (u[i] == 1) {
-                    if (n_M[i] == 0) {
-                        o[i] <- paste0(o[i], " * MM(aam)")
-                    }
-                    if (n_M[i] > 0) { # current status is M
-                        o[i] <- paste0(o[i], " * MM(aam:age)")
-                    }
-                    if (n_M[i] == -2908) {
-                        if (n_N[i] == 0) { # any NA n_N here?
-                            o[i] <- paste0(o[i], " * MJ(aam)")
-                        }
-                        if (n_N[i] > 0) {
-                            o[i] <- paste0(o[i], " * M...J(aam:age)")
-                        }
-                    }
-                }
-                if (u[i] > 1) {
-                    if (n_N[i] == 3) {
-                        o[i] <- paste0(o[i], " * M...J(aam:age+3)")
-                    }
-                    if (n_N[i] == 4) {
-                        o[i] <- paste0(o[i], " * M...J(aam:age+4)")
-                    }
-                    if (n_N[i] == 5) {
-                        o[i] <- paste0(o[i], " * M...J(aam:age+5)")
-                    }
-                    if (n_N[i] > 5) {
-                        o[i] <- paste0(o[i], " * M...J(aam:age>5)")
-                    }
-                }
-            }
-        }
-    }
-    o
-    }
-)
-
-```
-
-## Likelihood calculation
-
-```{r llh}
-set.seed(2908)
-# fix part
-qM <- matrix(0, 7, 7)
-# main rates
-# -1/q_rr = mean
-qv <- runif(11, 0, 1)
-names(qv) <- char(12, 23, 34, 35, 36, 47, 57, 67, 74, 75, 76)
-# covariates
-betav <- rnorm(2, 0, 0.1)
-
-# changing part
-pM <- function(x, betav_, qv_, qM_, diag = TRUE) {
-    lp <- betav_[1] + betav_[2] * x/100
-    qv_ <- qv_ * exp(lp)
-    qM_[rbind(
-        c(1, 2),
-        c(2, 3),
-        c(3, 4), c(3, 5), c(3, 6),
-        c(4, 7), c(5, 7), c(6, 7),
-        c(7, 4), c(7, 5), c(7, 6)
-    )] <- qv_
-    diag(qM_) <- -1 * rowSums(qM_)
-    mexp <- Matrix::expm(qM_)
-    if (!diag) diag(mexp) <- 0
-    mexp
-}
-
-MJ <- function(J, n_N_, aam_, betav_, qv_, qM_) {
-    oo <- matrix(1, 2, 2)
-    if (n_N_ > 1)
-        for (a in 1:(n_N_ - 1))
-            oo <- oo %*% pM(aam_ + a, betav_, qv_, qM_)[c(3, J), c(3, J)]
-    oo <- pM(aam_, betav_, qv_, qM_)[3, c(3, J)] %*% oo %*% 
-        pM(aam_ + n_N_, betav_, qv_, qM_)[c(3, J), J]
-    oo
-}
-
-list2env(as.list(tmp), .GlobalEnv)
-o <- rep(1L, length(age))
-NN <- length(age)
-for (i in 1:NN) {
-    if (afs[i] == 0) {
-        for (a in 0:age[i]) o[i] = o[i] * pM(a, betav, qv, qM)[1, 1] # VV(1:age)
-    } else {
-        for (a in 0:afs[i]) o[i] = o[i] * pM(a, betav, qv, qM)[1, 1] # VV(1:afs)
-        o[i] = o[i] * pM(afs[i], betav, qv, qM)[1, 2] # VX(afs)
-        if (n_X[i] == 0 & aam[i] == 0) o[i] = o[i] * pM(afs[i], betav, qv, qM)[2, 2] # XX(afs)
-        if (n_X[i] > 0) for (a in afs[i]:(afs[i]+n_X[i])) o[i] = o[i] * pM(a, betav, qv, qM)[2, 2] # XX(afs:(afs+n_X))
-        if (aam[i] > 0) {
-            o[i] = o[i] * pM(aam[i], betav, qv, qM)[2, 3] # XM(aam)
-            if (u[i] == 1) {
-                if (n_M[i] == 0) o[i] = o[i] * pM(aam[i], betav, qv, qM)[3, 3] # MM(aam)
-                if (n_M[i] > 0) for (a in aam[i]:age[i]) o[i] = o[i] * pM(a, betav, qv, qM)[3, 3] # MM(aam:age)
-                if (n_M[i] == -2908) {
-                    if (n_N[i] == 0) o[i] = o[i] * pM(aam[i], betav, qv, qM)[3, ms[i]] # MJ(aam)
-                    if (n_N[i] > 0) o[i] = o[i] * MJ(ms[i], n_N[i], aam[i], betav, qv, qM) # M...J(aam:age)
-                }
-            }
-            if (u[i] > 1) {
-                if (n_N[i] == 3) { # M...J(aam:age+3)
-                    o[i] = o[i] * 
-                    pM(aam[i] + 0, betav, qv, qM)[3, c(4,5,6)] %*%
-                    pM(aam[i] + 1, betav, qv, qM)[c(4,5,6), 7] *
-                    pM(aam[i] + 2, betav, qv, qM)[7, ms[i]] # 77 = RM = RR =? MM
-                }
-                if (n_N[i] == 4) { # M...J(aam:age+4)
-                    J = ms[i]
-                    if (ms[i] != 7)
-                        o[i] = o[i] * 
-                        pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
-                        pM(aam[i] + 1, betav, qv, qM)[3:6, 4:7] %*%
-                        pM(aam[i] + 2, betav, qv, qM, diag = FALSE)[4:7, c(J, 7)] %*%
-                        pM(aam[i] + 3, betav, qv, qM)[c(J, 7), J]
-                    if (ms[i] == 7)
-                        o[i] = o[i] *
-                        pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
-                        pM(aam[i] + 1, betav, qv, qM)[3:6, 4:7] %*%
-                        pM(aam[i] + 2, betav, qv, qM)[4:7, 4:7] %*%
-                        pM(aam[i] + 3, betav, qv, qM)[4:7, 7]
-                }
-                if (n_N[i] > 4) { # M...J(aam:age+5+)"
-                    J = ms[i]
-                    oo <- matrix(1, 5, 5)
-                    qp <- matrix(1, 2, 2)
-                    if (n_N[i] > 5) {
-                        for (a in 2:(n_N[i] - 4)) {
-                            oo <- oo %*% pM(aam[i] + a, betav, qv, qM)[3:7, 3:7]
-                            if (J != 7)
-                                qp <- qp %*% pM(aam[i] + a, betav, qv, qM)[c(3,J), c(3,J)]
-                        }
-                    }
-                    if (ms[i] != 7)
-                        o[i] = o[i] * 
-                        (
-                            pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
-                            pM(aam[i] + 1, betav, qv, qM)[3:6, 3:7] %*%
-                            oo %*%
-                            pM(aam[i] + n_N[i] - 3, betav, qv, qM)[3:7, 4:7] %*%
-                            pM(aam[i] + n_N[i] - 2, betav, qv, qM)[4:7, c(J, 7)] %*%
-                            pM(aam[i] + n_N[i] - 1, betav, qv, qM)[c(J, 7), J] -
-                            
-                            pM(aam[i] + 0, betav, qv, qM)[3, c(3, J)] %*%
-                            pM(aam[i] + 1, betav, qv, qM)[c(3, J), c(3, J)] %*%
-                            qp %*%
-                            pM(aam[i] + n_N[i] - 3, betav, qv, qM)[c(3, J), J] *
-                            pM(aam[i] + n_N[i] - 2, betav, qv, qM)[J, J] *
-                            pM(aam[i] + n_N[i] - 1, betav, qv, qM)[J, J]
-                        )
-                    if (ms[i] == 7)
-                        o[i] = o[i] *
-                            pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
-                            pM(aam[i] + 1, betav, qv, qM)[3:6, 3:7] %*%
-                            oo %*%
-                            pM(aam[i] + 2, betav, qv, qM)[3:7, 4:7] %*%
-                            pM(aam[i] + 3, betav, qv, qM)[4:7, 4:7] %*%
-                            pM(aam[i] + 4, betav, qv, qM)[4:7, J]
-                }
-            }
-        }
-    }
-}
-range(o[1:NN])
 ```

@@ -11,46 +11,88 @@ invisible(TMB::config(tape.parallel = 0, DLL = "model"))
 TMB::openmp(1)
 
 data <- readRDS(here("data/prep.rds")) %>%
+d <- readRDS(here("data/d.rds"))
+N <- 3000
+data <- d %>% 
     mutate(across(everything(), haven::zap_label)) %>%
     mutate(across(everything(), as.integer)) %>%
     slice_sample(n = 100) %>%
+    mutate(J = J - 1) %>%
+    slice_head(n = N) %>% 
     as.list()
 
+data$modelmatrix <- model.matrix(~ age , data.frame(age = 0:MAX_AGE))
+
 expect_true(max(data$age) <= MAX_AGE)
+expect_true(max(data$delta) <= MAX_AGE)
 expect_true(all((data$afs + data$n_N) <= data$age))
 expect_true(all((data$aam + data$n_N) <= data$age))
+expect_true(max(data$J) == 6)
 
 data$sd_b <- c(0, 0.1)
 data$sd_q <- c(log(0.001), 0.1) # log normal mean and sd
 str(data)
 
-init <- list(
-    betav = rnorm((MAX_AGE + 1) * N_PAR, 0, 0.1),
-    lqv = rnorm(N_PAR, log(0.001), 1),
-    pacf = c(0, 1)
-)
+init <- list(betas = rnorm(2 * N_PAR, log(0.001), 1))
 str(init)
 
 obj <- TMB::MakeADFun(data, init, DLL = "model", silent = TRUE)
-
-fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 0))
-rp <- obj$report(obj$env$last.par.best)
-str(rp)
-
+fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 1, maxit = 500))
+rp <- obj$report(obj$env$last.par.best); str(rp)
 p_id <- char(VX, XM, MS, MD, MW, SR, DR, WR)
 p_lb <- char(
     "Sexual debut", "Marriage", "Separate", "Divorce", "Widow",
     "Separated>>Remarried", "Divorced>>Remarried", "Widowed>>Remarried"
 )
 
-rp$`KM.est` %>%
-    as_tibble() %>%
-    rename_with(~p_lb) %>%
-    rownames_to_column("age") %>%
-    mutate(age = as.numeric(age)) %>%
-    pivot_longer(-age) %>%
-    mutate(name = factor(name, levels = p_lb)) %>%
-    ggplot(aes(age, value, color = name)) +
-    geom_line() +
-    scale_color_manual(values = thematic::okabe_ito())
+vis <- function(x, rt = F) {
+    X <- array(rp[[x]], c(7, 7, 50))
+    tibble(
+        age = 1:50,
+        VX = X[1, 2, ],
+        VM = X[1, 3, ],
+        XM = X[2, 3, ],
+        MS = X[3, 4, ],
+        MD = X[3, 5, ],
+        MW = X[3, 6, ],
+        SR = X[4, 7, ],
+        DR = X[5, 7, ],
+        WR = X[6, 7, ],
+    ) %>%
+        pivot_longer(-age) %>%
+        mutate(name = factor(name, levels = char(VX, VM, XM, MS, MD, MW, SR, DR, WR))) %>%
+        allot(o)
+    if (rt) return(o)
+    o %>% ggplot(aes(age, value, color = name)) +
+        geom_line()
+}
 
+vis("KM.masterP") + facet_wrap(~name, scales = "free")
+
+vis("KM.masterP", 1) %>% 
+pivot_wider(names_from = name, values_from = value) %>% 
+transmute(
+    age = age,
+    pX = VX,
+    pM = (VX * XM) + VM, 
+    pNULL = NA,
+    pS = pM * MS,
+    pD = pM * MD,
+    pW = pM * MW,
+    pSr = pS * SR,
+    pDr = pD * DR,
+    pWr = pW * WR,
+    ) %>% 
+    pivot_longer(-age) %>% 
+    mutate(name = factor(name, 
+        levels = char(pX, pM, pNULL, pS, pD, pW, pSr, pDr, pWr), 
+        labels = char("Debut", "Marriage", "", "Separated|Married", "Divorced|Married", "Widowed|Married", "Remarried|Separated", "Remarried|Divorced", "Remarried|Widowed"), 
+        )) %>% 
+    ggplot(aes(age, value, color = name)) + geom_line() + facet_wrap(~name, scales = 'free') +
+    scale_y_continuous(labels = scales::percent, breaks = scales::pretty_breaks(n = 7)) +
+    theme(
+        legend.position = 'none',
+        panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(), axis.text.y = element_text(size = 5)) +
+    labs(title = "Transition probability in the next year", y = '')
+
+ggsave("fig/prob3000.png", width = 7, height = 4.5)
