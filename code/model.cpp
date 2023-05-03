@@ -76,6 +76,7 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(MJ);
   DATA_IVECTOR(J);
   DATA_IVECTOR(delta);
+  DATA_VECTOR(count);
   
   DATA_MATRIX(modelmatrix);
 
@@ -114,8 +115,10 @@ Type objective_function<Type>::operator() ()
             o(i, 5) *= KM(MJ[i], delta[i])(2,J[i]);
   }
   REPORT(o);
-  o = log(o.array());
-  dll += prior - o.sum();
+  o = log(o.array()); // all the 1s disapear here
+  vector<Type> oo = o.rowwise().sum();
+  oo *= count; // element-wise
+  dll += prior - oo.sum();
 
   REPORT(betas);
   REPORT(KM.est);
