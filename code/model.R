@@ -2,7 +2,7 @@ source("~/Documents/libs.r")
 # devtools::install('~/git/adcomp/TMB')
 
 MAX_AGE = 50
-N_PAR = 8
+N_PAR = 9
 
 library(TMB)
 TMB::compile("code/model.cpp")
@@ -10,27 +10,24 @@ base::dyn.load(TMB::dynlib("code/model"))
 invisible(TMB::config(tape.parallel = 0, DLL = "model"))
 TMB::openmp(1)
 
-data <- readRDS(here("data/prep.rds")) %>%
-d <- readRDS(here("data/d.rds"))
 N <- 3000
+d <- readRDS(here("data/d_agg.rds"))
 data <- d %>% 
     mutate(across(everything(), haven::zap_label)) %>%
     mutate(across(everything(), as.integer)) %>%
-    slice_sample(n = 100) %>%
     mutate(J = J - 1) %>%
     slice_head(n = N) %>% 
     as.list()
 
 data$modelmatrix <- model.matrix(~ age , data.frame(age = 0:MAX_AGE))
 
-expect_true(max(data$age) <= MAX_AGE)
 expect_true(max(data$delta) <= MAX_AGE)
 expect_true(all((data$afs + data$n_N) <= data$age))
 expect_true(all((data$aam + data$n_N) <= data$age))
 expect_true(max(data$J) == 6)
 
-data$sd_b <- c(0, 0.1)
-data$sd_q <- c(log(0.001), 0.1) # log normal mean and sd
+data$prior_base <- c(log(0.001), 0.1) # log normal mean and sd
+data$prior_t <- c(0, 0.1) # mean and sd
 str(data)
 
 init <- list(betas = rnorm(2 * N_PAR, log(0.001), 1))

@@ -96,9 +96,10 @@ dta %>%
     mutate(afs = if_else(afs != 0 & afs >= aam, aam, afs)) %>% # remove VX if VM
     mutate(
         VV = case_when(afs != 0 ~ afs - 1, otherwise ~ age - 1),
-        VX = case_when(afs != 0 ~ afs, afs == 0 ~ -2908, otherwise ~ age),
+        VX = case_when(afs != 0 & afs != aam ~ afs, otherwise ~ -2908),
+        VM = case_when(afs != 0 & afs == aam ~ aam, otherwise ~ -2908),
         XX = case_when(afs != 0 & aam != 0 & afs != aam ~ aam - afs, otherwise ~ -2908),
-        XM = case_when(aam != 0 ~ aam, otherwise ~ -2908),
+        XM = case_when(aam != 0 & afs != aam ~ aam, otherwise ~ -2908),
         MM = case_when(aam != 0 & u == "once" & ms == "married" ~ age - aam, otherwise ~ -2908),
         MJ = case_when(
             aam != 0 & !(u == "once" & ms == "married") ~ aam,
@@ -115,7 +116,10 @@ dta %>%
     ) %>% 
     allot(d)
 
-saveRDS(d, here::here('data/d.rds'))
+d %>% 
+    count(age, afs, aam, VV, VX, XX, XM, VM, MM, MJ, J, delta) %>% 
+    rename(count = n) %>% 
+    saveRDS(here::here('data/d_agg.rds'))
 ```
 
 ```
