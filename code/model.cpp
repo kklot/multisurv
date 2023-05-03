@@ -6,6 +6,8 @@
 #define N_PAR 8
 #define N_Q 7
 
+using Eigen::seqN;
+
 template <class T> 
 struct Kube {
     vector<T> 
@@ -56,34 +58,6 @@ struct Kube {
     }
 };
 
-template <class T> // 3 or 4 need to implement tophi
-struct mAR {
-    matrix<T> Sigma;
-    vector<T> phi;
-    mAR () {};
-    mAR (int m) : Sigma(m, m), phi(m) {Sigma.setIdentity();};
-    vector<T> to_phi (vector<T> x) {
-        if (x.size() != 2) Rf_error("not implemented");
-        vector<T> psi(2);
-        psi[0] = 2. * exp(x[0]) / (1. + exp(x[0])) - 1.;
-        psi[1] = 2. * exp(x[1]) / (1. + exp(x[1])) - 1.;
-        phi[1] = psi[1];
-        phi[0] = psi[0] * (1.0 - phi[1]);
-        if (phi[1] == -1) phi[1] += FLT_EPSILON;
-        if (phi[1] == 1 - phi.abs()(0) ) phi[1] -= DBL_EPSILON;
-        return phi;
-    };
-    T operator()(vector<T> pacf, vector<T> x, bool zeroing = true){
-        T dll = 0.;
-        dll += density::MVNORM(Sigma)(pacf);
-        phi = to_phi(pacf);
-        dll += density::ARk(phi)(x);
-        if (zeroing)
-        dll -= dnorm(sum(x), T(0), T(0.001) * x.size(), true);
-        return dll;
-    };
-};
-
 template<class Type>
 Type objective_function<Type>::operator() ()
 {
@@ -92,7 +66,6 @@ Type objective_function<Type>::operator() ()
 
   // data
   DATA_IVECTOR(afs);
-  DATA_IVECTOR(age);
   DATA_IVECTOR(aam);
 
   DATA_IVECTOR(VV);
