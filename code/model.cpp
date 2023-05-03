@@ -83,16 +83,24 @@ Type objective_function<Type>::operator() ()
   DATA_MATRIX(modelmatrix);
 
   // priors
-  DATA_VECTOR(sd_b);
-  DATA_VECTOR(sd_q);
+  DATA_VECTOR(prior_base);
+  DATA_VECTOR(prior_t);
 
   // Coefs
-  PARAMETER_VECTOR(betas); 
-  prior -= dnorm(betas, sd_q(0), sd_q(1), true).sum();
+  PARAMETER_VECTOR(betas);
+
+// base rate | intercept
+  vector<Type> intercepts = betas(seqN(0, N_PAR));
+  prior -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
   
   // Soft-constraints remarried to be the same
   prior -= dnorm(betas(6) - betas(7), Type(0), Type(0.001), true);
   prior -= dnorm(betas(6) - betas(8), Type(0), Type(0.001), true);
+
+  // age's coeff | time in the hazard
+  vector<Type> beta_t = betas(seqN(N_PAR, N_PAR));
+  prior -= dnorm(beta_t, prior_t(0), prior_t(1), true).sum();
+
   // Soft-constraints remarried to be the same
   prior -= dnorm(betas(N_PAR + 6) - betas(N_PAR + 7), Type(0), Type(0.001), true);
   prior -= dnorm(betas(N_PAR + 6) - betas(N_PAR + 8), Type(0), Type(0.001), true);
