@@ -3,7 +3,7 @@
 #define AGE_MAX 50
 #define N_AGE 51
 #define N_D 51 // differences, more than needed
-#define N_PAR 8
+#define N_PAR 9
 #define N_Q 7
 
 using Eigen::seqN;
@@ -32,10 +32,11 @@ struct Kube {
         for (int i = 0; i < N_AGE; i++) {
             qM.setZero(); 
             qM(0, 1) = est(i, 0); // debut
-            qM(1, 2) = est(i, 1); // marriage
-            qM(2, {3,4,5}) = est(i, {2,3,4}); // marriage dissolution
-            qM({3,4,5}, 6) = est(i, {5,6,7}); // disso > remarried
-            qM(6, {3,4,5}) = est(i, {2,3,4}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
+            qM(0, 2) = est(i, 1); // marriage from virgin
+            qM(1, 2) = est(i, 2); // marriage from debut
+            qM(2, {3,4,5}) = est(i, {3,4,5}); // marriage dissolution
+            qM({3,4,5}, 6) = est(i, {6,7,8}); // disso > remarried
+            qM(6, {3,4,5}) = est(i, {3,4,5}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
             qM.diagonal() = T(-1) * qM.rowwise().sum();
             memcpy(&masterQ(0) + i * len, &qM(0), sizeof(T) * len);
             pM = expm(qM);
@@ -70,6 +71,7 @@ Type objective_function<Type>::operator() ()
 
   DATA_IVECTOR(VV);
   DATA_IVECTOR(VX);
+  DATA_IVECTOR(VM);
   DATA_IVECTOR(XX);
   DATA_IVECTOR(XM);
   DATA_IVECTOR(MM);
@@ -87,14 +89,17 @@ Type objective_function<Type>::operator() ()
   // Coefs
   PARAMETER_VECTOR(betas); 
   prior -= dnorm(betas, sd_q(0), sd_q(1), true).sum();
+  
   // Soft-constraints remarried to be the same
-  prior -= dnorm(betas(5) - betas(6), Type(0), Type(0.001), true);
-  prior -= dnorm(betas(5) - betas(7), Type(0), Type(0.001), true);
-  prior -= dnorm(betas(N_PAR + 5) - betas(N_PAR + 6), Type(0), Type(0.001), true);
-  prior -= dnorm(betas(N_PAR + 5) - betas(N_PAR + 7), Type(0), Type(0.001), true);
+  prior -= dnorm(betas(6) - betas(7), Type(0), Type(0.001), true);
+  prior -= dnorm(betas(6) - betas(8), Type(0), Type(0.001), true);
+  // Soft-constraints remarried to be the same
+  prior -= dnorm(betas(N_PAR + 6) - betas(N_PAR + 7), Type(0), Type(0.001), true);
+  prior -= dnorm(betas(N_PAR + 6) - betas(N_PAR + 8), Type(0), Type(0.001), true);
+
   Kube<Type> KM(modelmatrix, betas);
 
-  matrix<Type> o(afs.size(), 6);
+  matrix<Type> o(afs.size(), 7);
   o.setOnes();
 
   for (int i = 0; i < afs.size(); i++) {
@@ -113,6 +118,8 @@ Type objective_function<Type>::operator() ()
             o(i, 4) *= KM(j)(2,2);
     if (MJ[i] > 0)
             o(i, 5) *= KM(MJ[i], delta[i])(2,J[i]);
+    if (VM[i] > 0)
+            o(i, 6) *= KM(VM[i])(0,2);
   }
   REPORT(o);
   o = log(o.array()); // all the 1s disapear here
