@@ -12,9 +12,7 @@ always_allow_html: true
 ```{r setup, include=F}
 here::i_am("code/prep.Rmd")
 source('~/Documents/libs.r')
-
-library(rdhs)
-tabyl <- function(dat, ...) janitor::tabyl(dat, ..., show_missing_level = FALSE)
+library(forcats)
 set.seed(1)
 ```
 
@@ -23,103 +21,141 @@ set.seed(1)
 Pull with `rdhs`
 
 ```{r adam, eval = F}
+library(rdhs)
 set_rdhs_config(
     email = "ath19@ic.ac.uk",
-    project = "Statistics and Machine Learning for HIV", password_prompt = T
+    project = "Statistics and Machine Learning for HIV", 
+    password_prompt = T
 )
-# 1
-datasets <- dhs_datasets("MW", fileFormat = "flat", fileType = c("IR")) %>%
-    filter(SurveyYear %in% 2015:2017) %>%
+
+ssa <- dhs_countries(returnFields = c("CountryName", "DHS_CountryCode")) %>%
+    mutate(regionName = countrycode::countrycode(CountryName, "country.name", "un.regionsub.name")) %>%
+    filter(regionName == "Sub-Saharan Africa")
+
+datasets <- dhs_datasets(
+    ssa$DHS_CountryCode, 
+    surveyYearStart = 2000,
+    surveyType = "DHS", 
+    fileFormat = "flat", 
+    fileType = c("IR", "MR")) %>%
     mutate(sex = if_else(FileType == "Individual Recode", "female", "male"))
+
 downloads <- get_datasets(datasets$FileName)
 ```
 
+
 ```{r dhs_pull}
-datasets <- readRDS(here("data/dhs_datasets.rds"))
-downloads <- readRDS(here("data/dhs_downloads.rds"))
-names(downloads)
+fid <- downloads %>% unlist() %>% basename() %>% substr(3, 4) %>% str_detect('IR') %>% which()
+flookup <- c(
+    weights = "v005", dob = "v011", doi = "v008", lab = "lab", afs = "v531", 
+    marriage_age = "v511", n_union = "v503", marital_status = "v501")
 
-x <- 1 # adapt from multiple datasets
-o <- readRDS(downloads[[x]]) %>%
-    as_tibble() %>%
-    mutate(lab = datasets$SurveyId[x])
-```
+o <- map_dfr(fid,
+    function(x) {
+        readRDS(downloads[[x]]) %>%
+            as_tibble() %>%
+            mutate(lab = datasets$SurveyId[x]) %>%
+            select(any_of(flookup)) %>%
+            mutate(
+                marital_status = haven::as_factor(marital_status),
+                sex = datasets$sex[x]
+            )
+    }
+)
+saveRDS(o, here("data/femaleSSA.rds"))
 
-Extract and converting date time 
+mid <- downloads %>% unlist() %>% basename() %>% substr(3, 4) %>% str_detect('MR') %>% which()
+mlookup <- c(weights = "mv005", dob = "mv011", doi = "mv008", lab = 'lab', 
+    afs = "mv531", marriage_age = "mv511", n_union = "mv503", marital_status = "mv501")
 
-```{r prep}
-dta <- o %>%
-    select(
-        psu = v021, strata = v023, weights = v005, dob = v011, doi = v008, lab,
-        afs = v531, 
-        marriage_age = v511,
-        n_union = v503,
-        month_1st_union = v507,
-        year_1st_union = v508,
-        cmc_uninon = v509,
-        marital_status = v501,
-        union_married = v502,
-        ever_in = v535
-    ) %>%
-    mutate(
-        marriage_age =  if_else(is.na(marriage_age), 0L, marriage_age),
-        marriage_age2 = (cmc_uninon - dob) / 12,
-        iso = substr(lab, 1, 2),
-        yob = cmc_to_year(dob), svy = cmc_to_year(doi),
-        age = svy - yob, sex = datasets$sex[x]
-    )
+oo <- map_dfr(mid,
+    function(x) {
+        readRDS(downloads[[x]]) %>%
+            as_tibble() %>%
+            mutate(lab = datasets$SurveyId[x]) %>%
+            select(any_of(mlookup)) %>% 
+            mutate(
+                marital_status = haven::as_factor(marital_status),
+                sex = datasets$sex[x]
+            )
+    }
+)
+
+saveRDS(oo, here("data/maleSSA.rds"))
+
+# both male and female
+ooo <- bind_rows(o, oo)
+
+# recode marital statuses
+marital_recode <- c(
+   never = "never in union" ,
+   never = "never married" ,
+   separated = "not living together" ,
+   separated = "seperated" ,
+   separated = "no longer living together/separated" ,
+   union = "living together",
+   union = "living with partner",
+   NULL = "missing"
+)
+ooo %<>% mutate(marital_status = fct_recode(marital_status, !!!marital_recode))
 
 #' Data cleaning
 #'
-dta %<>% filter(haven::zap_label(afs) <= age)
-dta %<>% filter(marriage_age <= age)
-dta %<>% filter(!(marital_status != 0 & afs == 0))
-dta <- dta |>
-    mutate(across(c(marital_status, n_union), haven::as_factor)) %>%
-    mutate(marital_status = forcats::fct_recode(
-        marital_status,
-        separated = "no longer living together/separated",
-        union = "living with partner"
-    ))
-#' remove those had more than once union with less than 3 years ()
-#' get this back when change to smaller time spliting duration
-# dta %<>%
-    # filter(!( n_union == 'more than once' & age - marriage_age < 3 ))
+ooo %>% 
+    mutate(
+        n_union = haven::as_factor(n_union), 
+        n_union = fct_recode(n_union, NULL = 'missing'),
+        age = round((doi - dob)/ 12), 
+        afs = if_else(afs > 90, NA_real_, afs), # inconsistent, unknown
+        afs = if_else(is.na(afs) & marital_status == "never", 0, afs), # fix missing
+        afs = if_else((afs == 0 | is.na(afs)) & marriage_age != 0 & marital_status != "never", marriage_age, afs), # missing afs but aam say otherwise
+        marriage_age = if_else(marital_status == "never", 0, marriage_age),
+        n_union = if_else(is.na(n_union) & marriage_age == 0, "neverOnce", n_union), 
+        n_union = if_else(is.na(n_union) & marriage_age != 0, "oneORmore", n_union), # as censored since missing in data
+        across(where(is.labelled), zap_label)
+    ) %>%
+    filter(!(is.na(marriage_age) & is.na(afs))) %>%  # interim DHS does not have afs & aam, do they named differently
+    filter(!is.na(marriage_age)) %>% # 225 had afs but not aam, can be done as censored but just removed here
+    saveRDS(here('data/cleaned.rds'))
+```
 ```
 
 Calculate needed indcator for likelihood
 
 ```{r likelihood_prep}
-dta %>%
-    select(afs, aam = marriage_age, age, u = n_union, ms = marital_status) %>% 
-    mutate(ms = if_else(ms == "union", "married", ms)) %>% 
-    mutate(afs = if_else(afs != 0 & afs >= aam, aam, afs)) %>% # remove VX if VM
+readRDS(here('data/cleaned.rds')) %>%
+    select(lab, afs, aam = marriage_age, age, u = n_union, ms = marital_status) %>% 
     mutate(
-        VV = case_when(afs != 0 ~ afs - 1, otherwise ~ age - 1),
-        VX = case_when(afs != 0 & afs != aam ~ afs, otherwise ~ -2908),
-        VM = case_when(afs != 0 & afs == aam ~ aam, otherwise ~ -2908),
-        XX = case_when(afs != 0 & aam != 0 & afs != aam ~ aam - afs, otherwise ~ -2908),
-        XM = case_when(aam != 0 & afs != aam ~ aam, otherwise ~ -2908),
-        MM = case_when(aam != 0 & u == "once" & ms == "married" ~ age - aam, otherwise ~ -2908),
-        MJ = case_when(
-            aam != 0 & !(u == "once" & ms == "married") ~ aam,
-            otherwise ~ -2908, # never had sex
-            ),
+        across(where(is.labelled), zap_labels),
+        cc = substr(lab, 1, 2),
+        ms = if_else(ms == "union", "married", ms),
+        afs = if_else(afs != 0 & aam != 0 & afs >= aam, aam, afs), # remove VX if VM
+        VV = if_else(afs != 0, afs - 1, age - 1),
+        VX = if_else(afs != 0 & afs != aam, afs, -2908),
+        VM = if_else(afs != 0 & aam != 0 & afs == aam, aam, -2908),
+        XM = if_else(afs != 0 & aam != 0 & afs != aam, aam, -2908),
+        XX = case_when(
+            afs != 0 & aam != 0 & afs != aam ~ aam - afs, 
+            afs != 0 & aam == 0 & afs != age ~ age - afs, 
+            otherwise ~ -2908),
+        MM = if_else(aam != 0 &   u == "once" & ms == "married", age - aam, -2908),
+        MJ = if_else(aam != 0 & !(u == "once" & ms == "married"), aam, -2908),
         delta = if_else(MJ > 0, age - aam + 1, -2908), 
         J = case_when(
             delta > 0 & ms == "separated" ~ 4,
             delta > 0 & ms == "divorced" ~ 5,
             delta > 0 & ms == "widowed" ~ 6,
             delta > 0 & ms == "married" ~ 7,
-            otherwise ~ -2908
-            )
+            otherwise ~ -2908)
     ) %>% 
-    allot(d)
-
-d %>% 
-    count(age, afs, aam, VV, VX, XX, XM, VM, MM, MJ, J, delta) %>% 
-    rename(count = n) %>% 
+    count(cc, age, afs, aam, VV, VX, XX, XM, VM, MM, MJ, J, delta) %>% 
+    rename(count = n) %T>% # note side effect here
+    allot(tmp) %>% 
     saveRDS(here::here('data/d_agg.rds'))
-```
+
+# add tests later if found
+mustbe <- function(x, y) expect_that(x, testthat::equals(y))
+tmp %>% filter(afs == 0, XX > 0) %>% nrow() %>% mustbe(0)
+tmp %>% filter(XM > 0, afs == 0) %>% nrow() %>% mustbe(0)
 
 ```
